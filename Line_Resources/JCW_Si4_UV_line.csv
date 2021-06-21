@@ -1,0 +1,6 @@
+# Lines to use in Solar notebook
+# Data c+p from NIST as tab-delim. No JS, no spaces in values, include g in level information, energy level in eV
+# https://physics.nist.gov/PhysRefData/ASD/lines_form.html
+
+element	sp_num	obs_wl_vac	ritz_wl_vac	intens	Aki	Acc	Ei	Ek	conf_i	term_i	J_i	conf_k	term_k	J_k	g_i	g_k	Type	tp_ref	line_ref	
+Si	4	"1402.77"	"1402.770"	"12"	"8.63e+08"	A+	"0.000000"	"8.838529"	"2p6.3s"	"2S"	"1/2"	"2p6.3p"	"2P*"	"1/2"	2	2		"c33,T6039,T5221"	"L6098"	
