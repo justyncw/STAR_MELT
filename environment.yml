@@ -1,0 +1,8 @@
+name: qgrid-environment
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - qgrid
+  - pandas-datareader>=0.5.0
+  - matplotlib>=2.1.1
