@@ -5,6 +5,13 @@ Repository for the STAR-MELT emission line analysis Jupyter notebook and Python 
 [See the one-minute STAR-MELT overview video here.](https://youtu.be/grDMizYmU6U)
 
 ------------
+## Binder Notebook
+
+To launch and try the STAR MELT tutorial notebook on binder, click the badge below.
+
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/justyncw/STAR_MELT/HEAD)
+
+------------
 ## Release Notes
 #### This is the development version of the STAR-MELT package (Campbell-White+,MNRAS,under review).
 
@@ -31,13 +38,6 @@ Then open the STAR_MELT_example_notebook.ipynb notebook.
 
 Package requirements are given within the example notebook and in requirements.txt.\
 The example notebook contains a tutorial for the package functions using the example data.
-
-------------
-## Binder notebook
-
-To launch the STAR MELT tutorial notebook on binder, click the badge below.
-
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/justyncw/STAR_MELT/HEAD)
 
 
 ------------
