@@ -1,14 +1,22 @@
 <img src="STAR_MELT_logo.png" width="600">
 
-# STAR_MELT
+# STAR MELT
 Repository for the STAR-MELT emission line analysis Jupyter notebook and Python package.\
-[See the one-minute STAR-MELT overview here.](https://youtu.be/grDMizYmU6U)
+[See the one-minute STAR-MELT overview video here.](https://youtu.be/grDMizYmU6U)
 
 ------------
 ## Release Notes
-This is the development version of the STAR-MELT package (Campbell-White+,MNRAS,under review).\
-Example data and standard star FITS files are from the [ESO Science Archive](http://archive.eso.org/).\
-Emission line parameters are from the [NIST database](https://physics.nist.gov/PhysRefData/ASD/lines_form.html). 
+#### This is the development version of the STAR-MELT package (Campbell-White+,MNRAS,under review).
+
+#### Example data and standard star FITS files are from the [ESO Science Archive](http://archive.eso.org/).
+
+* EX Lupi: ESO Programme IDs 099.A-9010, 082.C-0390, 085.C-0764
+* GQ Lupi: ESO Programme IDs 075.C-0710, 085.A-9027
+* CVSO109: ESO Programme IDs 106.20Z8.009, 106.20Z8.002, [ODYSSEUS & PENELLOPE Zenodo](https://zenodo.org/communities/odysseus/)     
+   Manara, C. F., et al. (2021), A&A, arXiv e-prints, [arXiv:2103.12446](https://arxiv.org/abs/2103.12446).
+
+#### Emission line parameters are from the [NIST database](https://physics.nist.gov/PhysRefData/ASD/lines_form.html).  
+* Kramida, A., Ralchenko, Yu., Reader, J. and NIST ASD Team (2020). NIST Atomic Spectra Database (version 5.8), [Online]. Available: <https://physics.nist.gov/asd> [Tue Jun 22 2021]. 
 
 
 
@@ -23,6 +31,11 @@ Then open the STAR_MELT_example_notebook.ipynb notebook.
 
 Package requirements are given within the example notebook and in requirements.txt.\
 The example notebook contains a tutorial for the package functions using the example data.
+
+------------
+## Binder notebook
+Information and link for the binder notebook to be added here once tested.
+
 
 ------------
 ## Instrument Compatibility
