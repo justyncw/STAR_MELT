@@ -34,7 +34,10 @@ The example notebook contains a tutorial for the package functions using the exa
 
 ------------
 ## Binder notebook
-Information and link for the binder notebook to be added here once tested.
+
+To launch the STAR MELT tutorial notebook on binder, click the badge below.
+
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/justyncw/STAR_MELT/HEAD)
 
 
 ------------
