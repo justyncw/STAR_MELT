@@ -24,7 +24,7 @@ Repository for the STAR-MELT emission line analysis Jupyter notebook and Python 
 ## Download
 To use the STAR-MELT Jupyter notebook, download or clone the repository into a local directory and start Jupyter notebook from that directory:
 ```
-cd STAR_MELT_dir
+cd STAR_MELT-main
 jupyter notebook 
 ```
 Then open the STAR_MELT_example_notebook.ipynb notebook.
