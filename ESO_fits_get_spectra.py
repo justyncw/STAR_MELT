@@ -87,9 +87,11 @@ def read_ESO_fits_spec(filename,verbose=False):
     
     try:
         bary_corr=phu['HIERARCH ESO DRS BARYCORR']
-        respower=bary_corr
     except:
-        bary_corr=0
+        try:
+            bary_corr=phu['HIERARCH ESO QC VRAD BARYCOR']
+        except:
+            bary_corr=0
 
     
     
@@ -238,7 +240,7 @@ def read_ESO_fits_spec(filename,verbose=False):
     # Main arrays:
 
     #info=['target,obs_data,mjd_date,instrument,wavemin,wavemax,respwr,snr']
-    info = [target,start_obs,MJD_start_obs,instrume,wavelmin,wavelmax,respower,snr] 
+    info = [target,start_obs,MJD_start_obs,instrume,wavelmin,wavelmax,bary_corr,snr] 
     spec = np.array(scidata[0][ispec - 1])
     flux = np.array(scidata[0][iflux - 1])
     err  = np.array(scidata[0][ierr - 1])

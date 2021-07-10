@@ -325,6 +325,14 @@ def spec_readspec(file):
                 print=('spec_readspec() some of the mandatory keywords were not found in primary header unit')
                 print('filename = %s   NOT COMPLIANT' % file)
                 return
+            try:
+                bary_corr=hdr['HIERARCH ESO QC VRAD BARYCOR']
+            except:
+                try:
+                    bary_corr=hdr['HIERARCH ESO QC BERV']
+                except:
+                    bary_corr=0
+                
         elif hdu[1].columns[0] is not None:
             scidata = hdu[1].data
             wave = scidata[0][0]
@@ -341,6 +349,14 @@ def spec_readspec(file):
                 print=('spec_readspec() some of the mandatory keywords were not found in primary header unit')
                 print('filename = %s   NOT COMPLIANT' % file)
                 return
+            try:
+                bary_corr=hdr['HIERARCH ESO QC VRAD BARYCOR']
+            except:
+                try:
+                    bary_corr=hdr['HIERARCH ESO QC BERV']
+                except:
+                    bary_corr=0
+
         else:
             print('!!!	Wavelength keyword not found in FITS HEADER 	!!!')
             return
@@ -350,7 +366,7 @@ def spec_readspec(file):
         #readcol, file, wave, lambda
     hdu.close()	
     #info=['target,obs_data,mjd_date,instrument,wavemin,wavemax,respwr,snr']
-    info = [target,start_obs,MJD_start_obs,instrume,min(wave),max(wave),'N/A','N/A'] 
+    info = [target,start_obs,MJD_start_obs,instrume,min(wave),max(wave),bary_corr,'N/A'] 
 
     return info,wave,flux,err
 
@@ -396,7 +412,11 @@ def readspec_espresso_air(file,err_out='NO',hdr_out='NO'):
         print=('spec_readspec() some of the mandatory keywords were not found in primary header unit')
         print('filename = %s   NOT COMPLIANT' % file)
         return
-
+    try:
+        bary_corr=hdr['HIERARCH ESO QC BERV']
+    except:
+        bary_corr=0
+    
     if 'FLUX' in hdu[1].columns.names:
         # in the *FINAL* product of the pipeline, FLUX is flux calibrated and sky subtracted
         flux = np.array(hdu[1].data['FLUX'],dtype=np.float64)
@@ -419,7 +439,7 @@ def readspec_espresso_air(file,err_out='NO',hdr_out='NO'):
     if min(wave) > 1000:
         wave=wave / 10 
 
-    info = [target,start_obs,MJD_start_obs,instrume,min(wave),max(wave),'N/A','N/A'] 
+    info = [target,start_obs,MJD_start_obs,instrume,min(wave),max(wave),bary_corr,'N/A'] 
 
 
     if err_out=='NO' and hdr_out=='NO':
@@ -643,7 +663,8 @@ def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid
         w_min=data_dates_range.wmin.values[0]*10
         w_max=data_dates_range.wmax.values[0]*10
         w_step=0.1
-        w0=np.arange(w_min,w_max,w_step)         
+        w0=np.arange(w_min,w_max,w_step)   
+        
     if qgrid==False:
         '''remove bad telluric range'''
         telu_mask=((w0 < 7592) | (w0 > 7690)) & ((w0 < 6872) | (w0 > 6920))            

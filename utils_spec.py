@@ -161,6 +161,10 @@ def get_av_spec(data_dates_range,w0,label='mjd',norm=False,output=False,plot_av=
         if instr!='XMM':
             if min(data_wave) < 1000:
                 data_wave=data_wave * 10 
+                
+        if data_info[3]=='UVES' or data_info[3]=='XSHOOTER':
+            bary_shift=(data_wave * data_info[6]) / clight #shift in the rest wl due to bary
+            data_wave=data_wave + bary_shift
 
         resample=interp1d(data_wave,data_flux,fill_value='extrapolate')
         f0_data=resample(w0)
@@ -299,10 +303,10 @@ def vel_plot(df_av_line,start_date='1900',end_date='2100',line=0,fs=USH.fig_size
         option to convert to velocity given line and radvel'''
     
     figure(figsize=fs)
-    plot(df_av_line.vel,df_av_line.iloc[:,1:len(df_av_line.columns)-3],linewidth=1)
+    plot(df_av_line.vel,df_av_line.iloc[:,1:len(df_av_line.columns)-3],linewidth=2)
     if plot_av==True:
-        plot(df_av_line.vel,df_av_line.av_flux,'k',linewidth=2,label='mean')
-        plot(df_av_line.vel,df_av_line.med_flux,'b',linewidth=2,label='median')
+        plot(df_av_line.vel,df_av_line.av_flux,'k',linewidth=1,label='mean')
+        plot(df_av_line.vel,df_av_line.med_flux,'b',linewidth=1,label='median')
         legend(df_av_line.columns[1:-1], fontsize=10, numpoints=1)
     if plot_sd==True:    
         plot(df_av_line.vel,df_av_line.std_flux/df_av_line.med_flux,color='green',alpha=0.5, linestyle='dashed',linewidth=2,label='sd')       
@@ -312,6 +316,7 @@ def vel_plot(df_av_line,start_date='1900',end_date='2100',line=0,fs=USH.fig_size
         else:
             legend(np.append(df_av_line.columns[1:-3],['std_flux/med_flux','std_flux']), fontsize=10, numpoints=1)
     if plot_av==False and plot_sd==False:
+        i=1
         legend(df_av_line.columns[1:-3].values, fontsize=10, numpoints=1)#,bbox_to_anchor=(1.04,1))
     axvline(x=0,color='k',linewidth=0.5,linestyle='--')
     title('Plot of line at %.0f Angstroms'%(line))
@@ -877,7 +882,7 @@ def subtract_cont(df_av,av='med',poly=3,wl_win=0.5,coeff=31,output=False,plot_x=
     return f_flat
 
 def find_em_lines(df_av,f_flat,radvel,vsini,sigma=2.5,av='med',atol=0.5,
-                  output=False,line_id=False,xrange=[],xlim_min='min',xlim_max='max'):
+                  output=False,line_id=False,prev_lines_only=False,xrange=[],xlim_min='min',xlim_max='max'):
     '''
     function to find EM lines for flat spectra
     req. database of lines to compare with 'obs_wl_air' as the wavelength col
@@ -948,8 +953,12 @@ def find_em_lines(df_av,f_flat,radvel,vsini,sigma=2.5,av='med',atol=0.5,
     
     
     ''' list of lines''' 
-   
-    if USH.instrument[0]=='XMM':
+    
+    if prev_lines_only==True:
+        line_table=USH.JCW_lines_NIST
+        wave='obs_wl_air'
+        print('Using previously observed lines only and',wave)
+    elif USH.instrument[0]=='XMM':
         line_table=USH.xr_line_table
         line_table=USH.xrs_line_table
         wave='ritz_wl_vac'
@@ -966,9 +975,7 @@ def find_em_lines(df_av,f_flat,radvel,vsini,sigma=2.5,av='med',atol=0.5,
         line_table=USH.line_table
         line_table=USH.line_table_prev_obs
         wave='obs_wl_air'
-        print('Using line table with prev obs and ',wave)
-     
-
+        print('Using NIST list with previous observations indicated and',wave)
     
     rv_shift=(line_table[wave].values * radvel) / clight #shift in the rest wl due to rv
     vsini_shift=(line_table[wave].values * vsini) / clight #shift in the rest vl due to vsini (broadening)
@@ -1027,7 +1034,7 @@ def find_em_lines(df_av,f_flat,radvel,vsini,sigma=2.5,av='med',atol=0.5,
     
         
     if output == True:
-        figure(figsize=USH.fig_size_l)
+        figure(figsize=USH.fig_size_n)
         cla()
         #plot(w0,f0_data+1,'b',label='Input Spectra')
         plot(w0,f_flat,'r',label='Continuum Sub.')
@@ -1053,10 +1060,10 @@ def find_em_lines(df_av,f_flat,radvel,vsini,sigma=2.5,av='med',atol=0.5,
         ylabel('Normalised Flux')
         xlabel('Wavelength [Angstroms]')
         locator_params(axis='x', nbins=4)        
-        
+        #tight_layout()
 
     if output == True:
-        figure(figsize=USH.fig_size_l)
+        figure(figsize=USH.fig_size_n)
         cla()
         #plot(w0,f0_data+1,'b',label='Input Spectra')
         plot(w0,f0_data,'r',label='Input spectra')
@@ -1114,7 +1121,7 @@ def plot_em_lines(df_av,em_matches,plot_av=False,fs=USH.fig_size_l):
     
     wl_plot(df_av,plot_av=plot_av,fs=fs)
     
-    plot(w0_matches,f0_data_matches,'gx',label='NIST Matched Em. Line')
+    #plot(w0_matches,f0_data_matches,'gx',label='NIST Matched Em. Line')
     [axvline(x=_x,color='k',linewidth=0.5,linestyle='--') for _x in w0_matches]
     line=0.0 #this stops multiple labels being plotted for lines matched to more than one emission
     for index,row in em_matches_cut.iterrows():
@@ -1126,9 +1133,9 @@ def plot_em_lines(df_av,em_matches,plot_av=False,fs=USH.fig_size_l):
             except:
                 name = '%s %.2f'%(row.element,row.w0)
             annotate(name,(line,flux),rotation=90,size=10,
-                    xytext=(10, 10),  # 3 points vertical offset
+                    xytext=(10, -10),  # 3 points vertical offset
                     textcoords="offset pixels",
-                    horizontalalignment='left', verticalalignment='bottom')
+                    horizontalalignment='left', verticalalignment='top')
 
     #legend(loc='upper left', fontsize=8, numpoints=1)
     ylabel('Flux')
@@ -1319,9 +1326,9 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
     y=df_av_line[obs].values #take observation date from function specified input
     y=df_av_line[obs].values #* 1000#take observation date from function specified input
 
-    y -= min(y) #shift all the lines to be min 0 flux
   
     try:
+        y -= min(y) #shift all the lines to be min 0 flux
         g_fit=fit_gauss(x,y,ngauss,neg,g1_cen=g1_cen,g2_cen=g2_cen,g3_cen=g3_cen,neg_cen=neg_cen,
                        g1_sig=g1_sig,g2_sig=g2_sig,g3_sig=g3_sig,neg_sig=neg_sig) #fit the linear model using above function
     except:
@@ -1563,7 +1570,7 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
                     ax.legend(fontsize=12)
 
             if output==True:
-                tight_layout()
+                #tight_layout()
                 show()
             if savefig==True:
                 #output dir
