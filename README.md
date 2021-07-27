@@ -26,7 +26,7 @@ Once in the notebook, click on a code cell and hit shift+enter to run it and adv
 * EX Lupi: ESO Programme IDs 099.A-9010, 082.C-0390, 085.C-0764
 * GQ Lupi: ESO Programme IDs 075.C-0710, 085.A-9027
 * CVSO109: ESO Programme IDs 106.20Z8.009, 106.20Z8.002, [ODYSSEUS & PENELLOPE Zenodo](https://zenodo.org/communities/odysseus/)     
-   Manara, C. F., et al. (2021), A&A, arXiv e-prints, [arXiv:2103.12446](https://arxiv.org/abs/2103.12446).
+   Manara, C. F., et al. (2021), A&A, [arXiv:2103.12446](https://arxiv.org/abs/2103.12446).
 
 #### Emission line parameters are from the [NIST database](https://physics.nist.gov/PhysRefData/ASD/lines_form.html).  
 * Kramida, A., Ralchenko, Yu., Reader, J. and NIST ASD Team (2020). NIST Atomic Spectra Database (version 5.8), [Online]. Available: <https://physics.nist.gov/asd> [Tue Jun 22 2021]. 
