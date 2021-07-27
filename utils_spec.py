@@ -12,6 +12,7 @@ from astropy.time import Time
 from astropy.coordinates import SkyCoord, EarthLocation
 import astropy.units as u
 from scipy.interpolate import interp1d
+from scipy.optimize import curve_fit
 from ESO_fits_get_spectra import *
 from ESP_fits_get_spectra import *
 from utils_data import *
@@ -1724,7 +1725,188 @@ def periodogram_indiv(line_results,method='auto',cen_cor=False,plot_title=False)
     print('F.A.P at max power:',ls.false_alarm_probability(power.max()))
     print('power req. for F.A.P of 50%,10%:',ls.false_alarm_level([0.5,0.1]))
 
+
+def phase_period(em_line_date_results,linewav,mjd0,period=17,gofmin=0.2,filmin=-20,filmax=20,
+                maxper=100,minper=0,errmin=100,mjmin=0,mjmax=600000):
     
+    #At present, the program does the wrapping with the period you give by hand
+    #It also calculates the period by itself and prints some info on it.
+    #It does not take the period from the periodogram, but the one you provide, for the plots
+    #The line fit is also done for that period. This allows for instance to wrap a line to check
+    #around one period and get the fit even if that line does not show a significant period in terms of
+    #FAP. It also allows to, once you know the period, fit the lines between two MJD to check
+    #if the fit (phase, amplitude, offset) changes in time.
+    period=period  #period to check
+    gofmin=gofmin #filter the velo
+    filmin=filmin #only velos between those limits
+    filmax=filmax 
+    maxper=maxper #if you want to find a period below a given limit
+    minper=minper #the other limit to the period to avoid the 1d thingy if that gives problems
+    mjd0=mjd0 #initial date, use the same for all lines from one source or phases will be odd!
+    errmin=errmin #maximum error to use value 
+    mjmin=mjmin #minimum mjd for selection
+    mjmax=mjmax	#maximum mjd for selection
+
+    mjd=em_line_date_results.mjd[em_line_date_results.obs_wl_air==linewav]
+    velo=em_line_date_results.g1_cen[em_line_date_results.obs_wl_air==linewav]
+    veloerr=em_line_date_results.g1_stderr[em_line_date_results.obs_wl_air==linewav]
+    gof=em_line_date_results.gof[em_line_date_results.obs_wl_air==linewav]
+    ele=em_line_date_results.element[em_line_date_results.obs_wl_air==linewav].any()
+    linename=ele+' '+str(int(linewav))  # line name to use it for the figure labels
+
+
+    # -----------------------------------------------------------------------------------------------
+
+    #Function to fit
+    #RV=V0+A*sin(phi-phi0) 
+    #where V0 is the velo offset, A is the amplitude (Vsini*sin(theta_spot)) 
+    #phi0 is the phase origin, phi the phase
+
+    def rv(x,v0,a0,phi0):
+        return v0+abs(a0)*sin(2.*np.pi*(x-phi0))
+
+    #initial params
+    pini=[0.,2.,0.]
+
+    # -----------------------------------------------------------------------------------------------
+
+    phaseu=numpy.mod(mjd/period,1.0)
+
+    phasetime=floor((mjd-mjd0)/period) #color with respect to first period
+
+    approxer=gof
+
+    #filter data according to gof, velo limits (use to exclude crazy values), max error, and mjd
+    fil=(gof<gofmin) & (velo>filmin) & (velo<filmax) & (veloerr<errmin)  & (mjd>mjmin) & (mjd<mjmax)
+    phaseu=phaseu[fil]
+    velo=velo[fil]
+    veloerr=veloerr[fil]
+    phasetime=phasetime[fil]
+    mjdu=mjd[fil]
+    
+    fig = figure()
+    #fig.set_size_inches(12, 8, forward=True)
+    subplots_adjust(left=0.15, bottom=0.12, right=0.98, top=0.97, wspace=0.25, hspace=0.25)
+    #ax=[-0.1, 2.1,-2, 2]
+    x=[-0.5,2.5]
+    y=[0,0]
+    # -----------------------------------------------------------------------------------------------
+
+    errorbar(phaseu,velo,yerr=veloerr, fmt='',ecolor='k', alpha=0.5, elinewidth=1,linewidth=0)
+    errorbar(phaseu+1,velo,yerr=veloerr, fmt='',ecolor='k', alpha=0.5, elinewidth=1,linewidth=0)
+
+    #scatter(phaseu, velo,s=250,c=phasetime, marker = 'o', edgecolor='none', alpha=0.8, cmap= cm.terrain,vmin=min(phasetime),vmax=max(phasetime))
+    #scatter(phaseu+1, velo,s=250,c=phasetime, marker = 'o', edgecolor='none', alpha=0.8, cmap= cm.terrain,vmin=min(phasetime),vmax=max(phasetime))
+
+    #phasetime=np.log(abs(phasetime))
+
+    scatter(phaseu, velo,s=150,c=phasetime, marker = 'o', edgecolor='none', alpha=0.7, cmap= cm.gist_rainbow,vmin=min(phasetime),vmax=max(phasetime))
+    scatter(phaseu+1, velo,s=150,c=phasetime, marker = 'o', edgecolor='none', alpha=0.7, cmap= cm.gist_rainbow,vmin=min(phasetime),vmax=max(phasetime))
+
+    # -----------------------------------------------------------------------------------------------
+    #plot and fit the curve
+    pout,cova=curve_fit(rv,phaseu,velo,pini)
+    #plot fit
+    xx=arange(-0.5,2.5,0.01)
+    yy=rv(xx,pout[0],pout[1],pout[2])
+    plot(xx,yy,'k:', linewidth=3, alpha=0.5)
+
+    #Because this gives a complete turn when x goes from 0-2pi, units of phi0 are "phase" and not degrees.
+    #Therefore, the total angle offset is 2*pi*phi0 in radians.
+    #Thus to convert the phase into degrees I will need to do 2*pi*phi0*180/pi = 360*phi0 	
+
+    #Get the uncertainty from the covariance matrix, I assume correlated part negligible
+    print('Fit; for the period given in argument',period,'d')
+    print('Offset',pout[0],'+-',sqrt(cova[0,0]), 'km/s')
+    print('Amplitude',pout[1],'+-',sqrt(cova[1,1]), 'km/s')
+    print('Phase',pout[2]*360.,'+-',sqrt(cova[2,2])*360, 'degrees')
+    # -----------------------------------------------------------------------------------------------
+    #Do Lomb Scargle
+    perio = np.linspace(1.3,700, 100000)
+    freq= 1 / perio
+
+    #use median errors to avoid issues with LSP
+    veloerr0=np.ones([np.size(velo)])*np.median(veloerr)
+
+    ls=LombScargle(mjdu,velo,veloerr0) #.power(freq)
+    f,ls=LombScargle(mjdu,velo,veloerr0).autopower(minimum_frequency=min(freq),maximum_frequency=max(freq),samples_per_peak=50)
+    autoperio=1/f
+
+    #plot(1/freq, ls)
+    ls0=LombScargle(mjdu,velo,veloerr0)
+    f0,p0=ls0.autopower(minimum_frequency=min(freq),maximum_frequency=max(freq),samples_per_peak=50)
+    #plot(1/f0,p0, alpha=0.2)
+    fap= ls0.false_alarm_probability(max(ls),method='baluev')
+    print('Line velocity periodicity:\n Estimated fap=', fap)
+    print(' For period:', autoperio[np.argmax(ls)],'d \n')
+    print(' Nr of datapoints:', np.size(velo),'\n')
+    level99=ls0.false_alarm_level(0.001)
+    #a=[min(perio),max(perio)]
+    #b=[level99,level99]
+    #plot(a,b,'k-',alpha=0.2)
+
+    #For period limit too, that tells me the significance of any other point I see by eye
+    #or to help getting rid of annoying features like the 1d period or the long period bump.
+
+    #fli=(perio<maxper)
+    fli=(autoperio<maxper) & (autoperio>minper)
+    lslim=ls[fli]
+    autoperiolim=autoperio[fli]
+    faplim= ls0.false_alarm_probability(max(lslim),method='baluev')
+    print('Best period within limits', minper, '-', maxper, 'd')
+    print('Line velocity: Estimated fap=', faplim)
+    print('For period:', autoperiolim[np.argmax(lslim)],'d \n')
+    # -----------------------------------------------------------------------------------------------
+
+    #legend(loc=4, fontsize=20)
+    #legend(loc='upper left', fontsize=15)
+    ax=[-0.1,2.1,min(velo)-0.5,max(velo)+0.5]
+
+    ytext='V (km/s) for '+ linename
+    xtext='Phase (for a ' + str(round(period,3)) + 'd period)'
+    #xlabel ('Phase (for a 7.41d period)')
+    xlabel(xtext)
+    ylabel (ytext)
+    axis(ax)
+    show()
+
+    peri=re.sub('\.','p',str(round(period,3)))
+    linename2=re.sub(' ','',sys.argv[2])
+    perithing='_p'+ peri + '_' + linename2 +  '_gof_'+ str(round(gofmin,1))+'_mjd_' + str(round(average(mjdu))) + '_wrapped.png'
+    #namefig=re.sub('.csv',perithing,filename)
+
+    #savefig(namefig)
+    ####
+
+    fig = figure()
+    #fig.set_size_inches(12, 8, forward=True)
+    #matplotlib.rc('font', family='serif',size=20)
+    subplots_adjust(left=0.13, bottom=0.12, right=0.98, top=0.97, wspace=0.25, hspace=0.25)
+
+    perithing2='_p'+ peri + '_' + linename + '_gof_'+ str(round(gofmin,1)) + '_mjd_' + str(round(average(mjdu))) + '_GLS.png'
+    #linename2 to avoid gap in filename
+    #namefig2=re.sub('.csv',perithing2,filename)
+
+    #mark the rotational period being checked
+    xx=autoperio[np.argmax(ls)]  
+    x=[xx,xx]
+    y=[0,1]
+    plot(x,y,'k-',linewidth=5,alpha=0.2)
+
+    #plot(1/freq, ls)
+    plot(1/f,ls,linewidth=2)
+    #plot(1/f0,p0, 'r-',alpha=0.2)
+
+    #Limit to plot this is a bit arbitrary but zoomed for the features we see so far in stars
+    ax=[min(perio),45,0,max(ls)+0.1]
+    #ax=[min(perio),45,0,1]#max(ls)+0.1]
+    axis(ax)
+    powertext='Power for ' + linename 
+    ylabel(powertext)
+    xlabel('Period (d)')
+    #savefig(namefig2)
+
+    show()
     
 
 def bary_corr(mjd_insts,simbad_table,observatory='lasilla'):
