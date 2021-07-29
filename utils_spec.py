@@ -221,7 +221,7 @@ def get_av_spec(data_dates_range,w0,label='mjd',norm=False,output=False,plot_av=
     return df_av
 
 
-def wl_plot(df_av,plot_av=True,fs=USH.fig_size_l):
+def wl_plot(df_av,plot_av=True,fs=USH.fig_size_l,output=True,savefig=False):
     '''
     plotter for df_av dataframe, for use after wl_exluder has been run
 
@@ -237,8 +237,9 @@ def wl_plot(df_av,plot_av=True,fs=USH.fig_size_l):
     None.
 
     '''
+    ioff()
     #fs=(5,5)
-    figure(figsize=fs)
+    fig=figure(figsize=fs)
     plot(df_av.wave,df_av.iloc[:,1:len(df_av.columns)-3],linewidth=1)
     if plot_av==True:
         plot(df_av.wave,df_av.av_flux,'k',linewidth=3,label='average')
@@ -251,7 +252,18 @@ def wl_plot(df_av,plot_av=True,fs=USH.fig_size_l):
     legend(df_av.columns[1:,], fontsize=10, numpoints=1)
     #legend(df_av.columns[1:,], loc='center left', bbox_to_anchor=(1, 0.5), fontsize=7, numpoints=1)
     tight_layout()
-
+    if output==True:
+        show()
+    if savefig==True:
+        dirname=os.path.join('wl_plots')
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
+        filename=os.path.join(dirname,USH.target)+'_'+USH.instrument+'_'+str(int(median(df_av.wave)))+'.pdf'
+        fig.savefig(filename)
+        print('saving figure: ',filename)
+        if output == False:
+            close()
+    ion()
 
 def get_line_spec(df_av,line,w_range=0.6,vel_offset=0,vel=False):
     '''
