@@ -302,9 +302,12 @@ def get_line_spec(df_av,line,w_range=0.6,vel_offset=0,vel=False):
         #df_line_av=df_line_av[df_line_av['vel'].between(0-w_range,0+w_range)]
 
         df_line_av1=df_line_av[df_line_av['vel'].between(0-w_range,0+w_range)]
-        max_flux_idx=numpy.where(df_line_av1.med_flux==max(df_line_av1.med_flux))[0][0]
-        max_flux_vel=df_line_av1.vel.iloc[max_flux_idx]
-        df_line_av=df_line_av[df_line_av['vel'].between(max_flux_vel-w_range,max_flux_vel+w_range)]
+        df_line_av=df_line_av1
+        
+        #this is to centre around the max of the line, works for well defined em lines but failing for em lines within absorptions
+        #max_flux_idx=numpy.where(df_line_av1.med_flux==max(df_line_av1.med_flux))[0][0]
+        #max_flux_vel=df_line_av1.vel.iloc[max_flux_idx]
+        #df_line_av=df_line_av[df_line_av['vel'].between(max_flux_vel-w_range,max_flux_vel+w_range)]
 
     return df_line_av
 
