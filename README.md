@@ -19,7 +19,7 @@ Once in the notebook, click on a code cell and hit shift+enter to run it and adv
 
 ------------
 ## Release Notes
-#### This is the development version of the STAR-MELT package [(Campbell-White+,MNRAS,accepted)](https://arxiv.org/abs/2108.02552).
+#### This is the development version of the STAR-MELT package, please cite [(Campbell-White+,MNRAS,2021)](https://ui.adsabs.harvard.edu/abs/2021arXiv210802552C/abstract) if you use STAR-MELT for your analysis. Funded by STFC grant: ST/S000399/1
 
 #### Example data and standard star FITS files are from the [ESO Science Archive](http://archive.eso.org/).
 
