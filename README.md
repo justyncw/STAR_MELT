@@ -2,7 +2,8 @@
 
 # STAR MELT
 Repository for the STAR-MELT emission line analysis Jupyter notebook and Python package.\
-[See the one-minute STAR-MELT overview video here.](https://youtu.be/grDMizYmU6U)
+[See the one-minute STAR-MELT overview video here.](https://youtu.be/grDMizYmU6U)\
+[See the STAR-MELT paper (Campbell-White+,MNRAS,2021) here.](https://ui.adsabs.harvard.edu/abs/2021arXiv210802552C/abstract)
 
 
 ------------
@@ -19,7 +20,7 @@ Once in the notebook, click on a code cell and hit shift+enter to run it and adv
 
 ------------
 ## Release Notes
-#### This is the development version of the STAR-MELT package, please cite [(Campbell-White+,MNRAS,2021)](https://ui.adsabs.harvard.edu/abs/2021arXiv210802552C/abstract) if you use STAR-MELT for your analysis. Funded by STFC grant: ST/S000399/1
+#### This is the development version of the STAR-MELT package, please cite [(“The STAR-MELT PYTHON package for emission-line analysis of YSOs” Campbell-White, Sicilia-Aguilar, Manara et al. MNRAS, 507, 3331, 2021)](https://ui.adsabs.harvard.edu/abs/2021arXiv210802552C/abstract) if you use STAR-MELT for your analysis. Funded by STFC grant: ST/S000399/1
 
 #### Example data and standard star FITS files are from the [ESO Science Archive](http://archive.eso.org/).
 
