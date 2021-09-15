@@ -11,7 +11,7 @@ Repository for the STAR-MELT emission line analysis Jupyter notebook and Python 
 
 To launch and try the STAR MELT tutorial notebook on binder, click the badge below.
 
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/justyncw/STAR_MELT/HEAD?filepath=STAR_MELT_example_notebook.ipynb)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/justyncw/STAR_MELT/HEAD?urlpath=%2Fnotebooks%2FSTAR_MELT_example_notebook.ipynb)
 
 This will open the notebook in an online Jupyter instance.\
 Once in the notebook, click on a code cell and hit shift+enter to run it and advance to the next cell. Selections can be made with the ipywidgets and qgrids. 
