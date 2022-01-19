@@ -221,7 +221,7 @@ def get_av_spec(data_dates_range,w0,label='mjd',norm=False,output=False,plot_av=
     return df_av
 
 
-def wl_plot(df_av,plot_av=True,fs=USH.fig_size_l,output=True,savefig=False):
+def wl_plot(df_av,plot_av=True,fs=USH.fig_size_l,output=True,savefig=False,legend=True):
     '''
     plotter for df_av dataframe, for use after wl_exluder has been run
 
@@ -249,7 +249,8 @@ def wl_plot(df_av,plot_av=True,fs=USH.fig_size_l,output=True,savefig=False):
     #legend(df_av.columns[1:,], loc='upper left',  fontsize=7, numpoints=1)
     ylabel('Flux')
     xlabel('Wavelength [Angstroms]')
-    legend(df_av.columns[1:,], fontsize=10, numpoints=1)
+    if legend==True:
+        fig.legend(df_av.columns[1:,], fontsize=10, numpoints=1)
     #legend(df_av.columns[1:,], loc='center left', bbox_to_anchor=(1, 0.5), fontsize=7, numpoints=1)
     tight_layout()
     if output==True:
@@ -592,7 +593,7 @@ def get_vsini(w0,df_av,st_wave,st_flux,st_rv,date='med_flux',w_min=5610,w_max=57
     return np.round(vsini,2),gfit
     
     
-def get_rv_vsini(df_av,st_wave,st_flux,st_rv,date='med_flux',w_min=5000,w_max=5500,output=True):
+def get_rv_vsini(df_av,st_wave,st_flux,st_rv,date='med_flux',vsini_max=50,w_min=5000,w_max=5500,output=True,rtn_err=False):
     '''
     
 
@@ -632,12 +633,19 @@ def get_rv_vsini(df_av,st_wave,st_flux,st_rv,date='med_flux',w_min=5000,w_max=55
     df_av_rv=df_av[df_av['wave'].between(w_min,w_max)] #range to take for RV
     w0_rv=df_av_rv['wave'].values
     f0_data_rv=df_av_rv[date].values
+    f0_data_rv=NormalizeData(f0_data_rv)
+    
+#     w_smooth=np.arange(min(w0_rv),max(w0_rv),5) #set a larger step interval to undersample input data
+#     smooth=interp1d(w0_rv,f0_data_rv,fill_value='extrapolate')
+#     f0_data_rv=smooth(w_smooth)
+#     w0_rv=w_smooth
     
     if max(st_wave) < 1000:
         st_wave=st_wave*10
     resample_st=interp1d(st_wave,st_flux,fill_value='extrapolate')
     w0_st=np.arange(w_min-100,w_max+100,0.05) #larger range for template
     f0_st_rv=resample_st(w0_st)
+    f0_st_rv=NormalizeData(f0_st_rv)
     
     xcor,ycor=pyasl.crosscorrRV(w0_rv, f0_data_rv, w0_st, f0_st_rv, rvmin, rvmax, 
                                 drv, mode='doppler', skipedge=70, edgeTapering=1.)
@@ -659,8 +667,9 @@ def get_rv_vsini(df_av,st_wave,st_flux,st_rv,date='med_flux',w_min=5000,w_max=55
     if output == True:
         #wl_plot(df_av_rv,plot_av=False,fs=USH.fig_size_n)
         figure(figsize=USH.fig_size_n)
-        plot(w0_rv,NormalizeData(f0_data_rv))
-        plot(w0_st,NormalizeData(f0_st_rv),alpha=0.5)
+        plot(w0_rv,(f0_data_rv),label='target')
+        plot(w0_st,(f0_st_rv),alpha=0.5,label='template')   
+        legend(loc='upper left', fontsize=8, numpoints=1)
         figure()
         plot(xcor+vt,ycor)
         
@@ -685,10 +694,10 @@ def get_rv_vsini(df_av,st_wave,st_flux,st_rv,date='med_flux',w_min=5000,w_max=55
         t_ycors.append(ycor)
         if output == True:
             plot(xcor+vt,ycor)
-            axvline(x=radvel,color='k',linewidth=0.5,linestyle='--')
             xlabel('Radial Velocity [km/s]')
             ylabel('Normalised Xcor')
     radvel=np.round(np.mean(rvs),2)
+    axvline(x=radvel,color='k',linewidth=0.5,linestyle='--')
     print ('av rad vel = %.2f km/s, sd = %.2f' %(np.mean(rvs),np.std(rvs)))
     #print ('rv cen mean std err= %.4f' %(np.mean(g1_stderr)))
     best_t_width=t_widths[argmin(t_chis)]
@@ -715,7 +724,8 @@ def get_rv_vsini(df_av,st_wave,st_flux,st_rv,date='med_flux',w_min=5000,w_max=55
     vmm=100. #max and min vel for the fit.
    
     #Now do some broadened spectra:    
-    kms_list=[2,3,5,7,9,12,15,20,25,30,35,50]
+    kms_list=[2,3,5,7,9,12,15,20,25,30,35,50,100]
+    kms_list=np.arange(2,vsini_max,np.round((vsini_max-2)/10,0))
     
     '''create empty data frames for the values and col names'''
     broad_flux=pd.DataFrame({'wave': w0_st})
@@ -807,7 +817,10 @@ def get_rv_vsini(df_av,st_wave,st_flux,st_rv,date='med_flux',w_min=5000,w_max=55
     USH.radvel=radvel
     USH.vsini=vsini
     
-    return radvel,vsini#,gfit
+    if rtn_err==True:
+        return radvel, np.std(rvs), vsini,np.std(av_vsini)
+    else:
+        return radvel,vsini#,gfit
     
 
 def subtract_cont(df_av,av='med',poly=3,wl_win=0.5,coeff=31,output=False,plot_x=[],plot_y=[]):
@@ -854,6 +867,7 @@ def subtract_cont(df_av,av='med',poly=3,wl_win=0.5,coeff=31,output=False,plot_x=
     if plot_y==[]:
         plot_y=[min(f0_data),max(f0_data)]
     
+   
     '''clip the data then resample back to original w0'''
     f0_mask=sigma_clip(f0_data,sigma_lower=2.5,sigma_upper=5)
     w0_clip=w0[~f0_mask.mask]
@@ -896,6 +910,111 @@ def subtract_cont(df_av,av='med',poly=3,wl_win=0.5,coeff=31,output=False,plot_x=
         show()
         #ion()
     return f_flat
+
+
+def subtract_temp(df_av,w0_st,f0_st,av='med',poly=3,wl_win=1,coeff=31,output=False,plot_x=[],plot_y=[]):
+    '''
+    template subtraction
+    
+    Parameters
+    ----------
+    df_av : dataframe
+        wave and flux dataframe.
+    av : str, optional
+        obs to use. The default is 'med'.
+    poly : int, optional
+        polynomial order to use in SG filter. The default is 3.
+    wl_win : float, optional
+        wavelength window to use in the SG filter. The default is 0.5.
+    coeff : int, optional
+        coeff of SG filter. The default is 31.
+    output : bool, optional
+        plot outputs. The default is False.
+    plot_x : float, optional
+        min wave range for plotting. The default is [].
+    plot_y : float, optional
+        max wave range for plotting. The default is [].
+
+    Returns
+    -------
+    f_flat : array
+        flux array of roughly continuum subtracted spectra.
+
+    '''
+
+    w0=df_av.wave
+    if plot_x==[]:
+        plot_x=[min(w0),max(w0)]
+         
+    if av=='med':
+        f0_data=df_av.med_flux
+    else:
+        f0_data=df_av.av_flux
+    
+    if plot_y==[]:
+        plot_y=[min(f0_data),max(f0_data)]
+      
+    #f0_st=NormalizeData(f0_st)
+    #f0_data=NormalizeData(f0_data)
+    f0_st=(f0_st)/median(f0_st)
+    f0_data=(f0_data)/median(f0_data)
+    
+    '''clip the input data then resample back to original w0'''
+    f0_mask=sigma_clip(f0_data,sigma_lower=0,sigma_upper=1)
+    w0_clip=w0[~f0_mask.mask]
+    f0_clip=f0_data[~f0_mask.mask]
+    clip_resample=interp1d(w0_clip,f0_clip,fill_value='extrapolate')
+    f0_sc=clip_resample(w0)
+    
+    '''undersample the data to get rough continuum'''
+    w_smooth=np.arange(min(w0_st),max(w0_st),wl_win) #set a larger step interval to undersample input data
+    smooth=interp1d(w0_st,f0_st,fill_value='extrapolate')
+    f_smooth=smooth(w_smooth)
+    #print('smooth std:',np.std(f_smooth))
+    
+    '''apply Savitzky-Golay filter to get continuum
+        expand values back out to original wavelength intervals
+        subtract continuum from raw flux values'''
+    f_sf=savgol_filter(f_smooth,coeff,poly)
+    expand=interp1d(w_smooth,f_sf,fill_value='extrapolate')
+    f_sf_full=expand(w0_st)
+    print('savgol std:',np.std(f_sf_full))
+    
+    '''subtract template from target spectra'''
+    expand=interp1d(w_smooth,f_sf,fill_value='extrapolate')
+    f_sf_data_full=expand(w0)
+    f_sub=f0_data-f_sf_data_full
+    
+    if output == True:
+        figure(figsize=USH.fig_size_n)
+        plot(w0,(f0_data),label='target')
+        plot(w0_st,(f0_st),alpha=0.5,label='template')
+        legend(loc='upper left', fontsize=8, numpoints=1)
+    
+    if output == True:
+        #ioff()
+        figure(figsize=USH.fig_size_l)
+        cla()
+        plot(w0,f0_data,linewidth=0.75,label='Input  norm. target')
+        plot(w0_st,f0_st,linewidth=0.75,label='Input Norm. template')
+        #plot(w0,f0_sc,label='sigma clipped')
+        plot(w_smooth,f_smooth,linewidth=0.75,label='Undersampled')
+        plot(w_smooth,f_sf,linewidth=1,label='S-G Flter, order=%s'%(poly))
+        plot(w0,f_sub,linewidth=0.75,label='Template Subtracted')
+        ylabel('Normalised Flux')
+        xlabel('Wavelength [Angstroms]')
+        xlim(plot_x)
+        ylim(plot_y)
+        
+        legend(loc='upper left', fontsize=8, numpoints=1)
+    
+        tight_layout()
+        show()
+        #ion()
+    return f_sub #check
+
+
+
 
 def find_em_lines(df_av,f_flat,radvel,vsini,sigma=2.5,av='med',atol=0.5,
                   output=False,line_id=False,prev_lines_only=False,xrange=[],xlim_min='min',xlim_max='max'):
@@ -1134,31 +1253,30 @@ def plot_em_lines(df_av,em_matches,plot_av=False,fs=USH.fig_size_l):
     em_matches_cut=em_matches[em_matches.w0.between(min(df_av.wave),max(df_av.wave))]
     f0_data_matches=em_matches_cut.f0_data
     w0_matches=em_matches_cut.w0
+    figure(figsize=fs)
+    cla()
+    #plot(w0,f0_data+1,'b',label='Input Spectra')
+    plot(df_av.wave,df_av.med_flux,linewidth=1,label='median')
+    plot(w0_matches,f0_data_matches,'gx',label='NIST Em. Line from ref table')
     
-    wl_plot(df_av,plot_av=plot_av,fs=fs)
-    
-    #plot(w0_matches,f0_data_matches,'gx',label='NIST Matched Em. Line')
     [axvline(x=_x,color='k',linewidth=0.5,linestyle='--') for _x in w0_matches]
     line=0.0 #this stops multiple labels being plotted for lines matched to more than one emission
-    for index,row in em_matches_cut.iterrows():
+    for index,row in em_matches.iterrows():
         if row.w0 != line:
-            line = row.obs_wl_air
+            line = row.w0
             flux = row.f0_data
-            try: #this is so that the plots work with older saved em_lines csv, can be removed later
-                name = '%s%s %.2f'%(row.element,row.sp_num,row.w0)
-            except:
-                name = '%s %.2f'%(row.element,row.w0)
-            annotate(name,(line,flux),rotation=90,size=10,
-                    xytext=(10, -10),  # 3 points vertical offset
-                    textcoords="offset pixels",
-                    horizontalalignment='left', verticalalignment='top')
+            name = '%s%s %.2f'%(row.element,row.sp_num,row.w0)
+            annotate(name,(line,flux),rotation=90,size=14,
+                  xytext=(10, 10),  # 3 points vertical offset
+                  textcoords="offset pixels",
+                  horizontalalignment='left', verticalalignment='top')
 
-    #legend(loc='upper left', fontsize=8, numpoints=1)
+    legend(loc='upper left', fontsize=8, numpoints=1)
     ylabel('Flux')
     xlabel('Wavelength [Angstroms]')
-    locator_params(axis='x', nbins=4)
-
+    locator_params(axis='x', nbins=4)    
     
+
     
     
 def fit_gauss(x,y,ngauss=1,neg=False,g1_cen=None,g2_cen=None,g3_cen=None,neg_cen=None,
@@ -1363,13 +1481,15 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
     int_flux=np.round(np.trapz(y_sub_line,x),4)
     
     #calculate asym from the intergrated flux above the zero baseline, comparing each side of peak
-    centre_x=closest(x,g_fit.best_values['g1_center'])
+    #centre_x=closest(x,g_fit.best_values['g1_center'])
+    centre_x=closest(x,0) #calculate wrt to 0 velocity rather than g1 centre
     centre_x_idx=np.where(x==centre_x)[0][0]
     peak_y=float(g_fit.best_fit[centre_x_idx])
     peak_y_base=y_base[centre_x_idx]
-    lhs_int_flux=np.trapz(y[centre_x_idx-50:centre_x_idx],x[centre_x_idx-50:centre_x_idx])
-    rhs_int_flux=np.trapz(y[centre_x_idx:centre_x_idx+50],x[centre_x_idx:centre_x_idx+50])
-    asym=(rhs_int_flux - lhs_int_flux)
+    lhs_int_flux=np.trapz(y_sub_line[0:centre_x_idx],x[0:centre_x_idx])
+    rhs_int_flux=np.trapz(y_sub_line[centre_x_idx:-1],x[centre_x_idx:-1])
+    asym=lhs_int_flux/(lhs_int_flux + rhs_int_flux)
+    #asym=lhs_int_flux/(int_flux)
     
     g1_stderr=g_fit.params['g1_center'].stderr
     if (g1_stderr) is None:
@@ -1433,7 +1553,7 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
         line_close=False
         
     if reject_low_gof==True and gof < gof_min and line_close==True or reject_low_gof==False:
-        line_info=pd.Series(({'gof':gof,'g1_cen':g_fit.values['g1_center'],'g1_stderr':g1_stderr, 'sigma':g_fit.values['g1_sigma'],
+        line_info=pd.Series(({'gof':gof,'g1_cen':g_fit.values['g1_center'],'g1_stderr':g1_stderr, 'g1_sigma':g_fit.values['g1_sigma'],
                             'g1_fwhm':g_fit.values['g1_fwhm'],'g1_fwhm_stderr':g_fit.params['g1_fwhm'].stderr,'g1_amp':g_fit.values['g1_amplitude'],'g1_amp_stderr':g1_amp_stderr,
                               'peak':peak_y, 'asym':asym, 'int_flux':int_flux, 'mjd':obs,'Vred':depth10_x}))
         try:

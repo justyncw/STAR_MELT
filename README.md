@@ -59,6 +59,7 @@ STAR-MELT will read the spectral data directly from the FITS files for the follo
 * HST COS
 * HST STIS
 * XMM-Newton RGS
+* CAFOS
 
 Reference emission lines and radial velocity standard stars are provided for the ground based data.
 

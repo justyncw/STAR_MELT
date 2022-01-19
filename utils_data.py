@@ -597,6 +597,8 @@ def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid
         w_max=data_dates_range.wmax.values[0]*10
         w_step=0.05
         w0=np.arange(w_min,w_max,w_step) #set standard range of wavelength with set steps
+        instr_mask=((w0 < 5303) | (w0 > 5338))            
+        w0=w0[instr_mask]    
     elif instrument=='ESPRESSO':
         w_min=data_dates_range.wmin.values[0]*10
         w_max=data_dates_range.wmax.values[0]*10
@@ -664,6 +666,18 @@ def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid
         w_max=data_dates_range.wmax.values[0]*10
         w_step=0.1
         w0=np.arange(w_min,w_max,w_step)   
+    elif 'CAFOS' in instrument:
+        w_min=data_dates_range.wmin.values[0]*10
+        w_max=data_dates_range.wmax.values[0]*10
+        w_step=0.1
+        w0=np.arange(w_min,w_max,w_step) 
+    else:
+        if instrument != 'any':
+            print('WARNING: instrument ', instrument, 'not tested but read in by read in scripts')
+            w_min=data_dates_range.wmin.values[0]*10
+            w_max=data_dates_range.wmax.values[0]*10
+            w_step=0.1
+            w0=np.arange(w_min,w_max,w_step)
         
     if qgrid==False:
         '''remove bad telluric range'''
