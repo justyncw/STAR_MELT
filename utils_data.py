@@ -464,14 +464,14 @@ def read_fits_files(filename,verbose=False):
                 print('Using ESP read in script')
         except:
             try:
-                info,wave,flux,err=spec_readspec(filename)
+                info,wave,flux,err=readspec_espresso_air(filename,err_out='yes')
                 if verbose==True:
-                    print('using spec_readspec()')
+                    print('using readspec_espresso_air()')
             except:
                 try:
-                    info,wave,flux,err=readspec_espresso_air(filename,err_out='yes')
+                    info,wave,flux,err=spec_readspec(filename)
                     if verbose==True:
-                        print('using readspec_espresso_air()')    
+                        print('using spec_readspec()')    
                 except:
                     try:
                         info,wave,flux,err=spec_ROTFIT(filename)
@@ -550,6 +550,9 @@ def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid
     info_list=[]
     for f in data_fits_files:
         info,wave,flux,err=read_fits_files(f)
+        
+        if info[3]=='SHOOT':#for custom reduced data with different instrument name
+            info[3]='XSHOOTER'
         
         if instr=='any':
             info_list.append(info)               

@@ -71,6 +71,12 @@ sol_line_table['ritz_wl_vac']=np.round(sol_line_table['ritz_wl_vac'],3)
 
 prev_obs_file='Line_Resources/previously_observed_lines_120321.csv'
 prev_obs=pd.read_csv(prev_obs_file,delimiter=',',index_col=False)
+prev_obs_cw21_file='Line_Resources/JCW+21_lines.csv'
+prev_obs_cw21=pd.read_csv(prev_obs_cw21_file,delimiter=',',index_col=False)
+prev_obs_cw21=prev_obs_cw21[['obs_wl_air','star']]
+prev_obs_cw21=prev_obs_cw21.rename(columns={'star':'prev'})
+prev_obs_cw21['prev_obs']=prev_obs_cw21['prev'] #check if want to keep previous IDs before cw21...
+prev_obs=pd.concat([prev_obs,prev_obs_cw21])
 prev_obs_NIST=pd.merge_asof(prev_obs.sort_values('obs_wl_air'),line_table,on='obs_wl_air',direction='nearest')
 line_table_prev_obs=pd.concat([prev_obs_NIST,line_table],sort=False)
 line_table_prev_obs.sort_values(['obs_wl_air','prev_obs'],inplace=True)
