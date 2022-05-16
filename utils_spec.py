@@ -391,19 +391,23 @@ def vel_xcorr(df1,df2=[],undersample=1,line1=0,line2=0,fs=(8,6)):
 
     x=[min(vel2),max(vel2)]
     y=[min(vel1),max(vel1)]
-    plot(x,y,color='w',linewidth=2, linestyle='--')
+    plot(x,y,color='k',linewidth=2, linestyle='--')
+    
+    xcor_masked=np.select([xcor>0.6 , xcor <-0.6],[xcor,xcor])
 
-    corre=pcolor(vel2,vel1,xcor,cmap=cm.jet, vmin=0, vmax=1,shading='auto')#,norm=colors.PowerNorm(gamma=2))
+    corre=pcolor(vel2,vel1,xcor_masked,cmap=cm.seismic, vmin=-1, vmax=1,shading='auto')#,norm=colors.PowerNorm(gamma=2))
     #blank low values colour, try white lower end 
     
     #contour(vel,vel,pcor,levels=[1e-15,1e-10,1e-5,1e-4],colors='w',linewidths=1)
-    contour(vel2,vel1,xcor,levels=[-0.8,0.8],colors='k',linewidths=1)
+    contour(vel2,vel1,xcor,levels=[-0.9,0.9],colors='c',linewidths=1)
 
     colorbar(corre, shrink=1, aspect=30)
 
     xlabel(f'{line2} v (km/s)')
     ylabel(f'{line1} v (km/s)')
-    text(max(vel2)+max(vel2)*0.4, 0, r'r')
+    text(max(vel2)+max(vel2)*0.45, 0, r'r')
+    
+    return(xcor)
 
 
 def get_RV(w0,df_av,st_wave,st_flux,st_rv,date='med_flux',w_min=5610,w_max=5710,multi=False,output=True):
@@ -1529,13 +1533,14 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
     y=df_av_line[obs].values #take observation date from function specified input
 
     flux_scaled=False
+    scale_factor=1
     if mean(y) < 1e-5: #for absolute flux units, remove the small order of mag for error calculations in the fitting
-        scale_factor=floor(log10(mean(y)))
-        y=y/10**scale_factor
+        scale_factor=10**floor(log10(mean(y)))
+        y=y/scale_factor
         flux_scaled=True
     
     try:
-        #y -= min(y) #shift all the lines to be min 0 flux
+        y -= min(y)  #shift all the lines to be min 0 flux
         g_fit=fit_gauss(x,y,ngauss,neg,g1_cen=g1_cen,g2_cen=g2_cen,g3_cen=g3_cen,neg_cen=neg_cen,
                        g1_sig=g1_sig,g2_sig=g2_sig,g3_sig=g3_sig,neg_sig=neg_sig) #fit the linear model using above function
     except:
@@ -1548,8 +1553,8 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
     
     y_base=g_fit.best_fit - min(g_fit.best_fit) # determine y values starting from 0 min
     line_values= (g_fit.best_values['line_slope'] * x) + g_fit.best_values['line_intercept']
-    y_sub_line=g_fit.best_fit - line_values # remove line component from final fit, not tested with two or more gauss compenents yet. 
-
+    y_sub_line=g_fit.best_fit - line_values # remove line component from final fit,
+    
     #calculate intergrated flux just from flux above continuum, i.e. subtract line compnent before integrating
     #int_flux=np.round(np.trapz(y_sub_line,x),4)
     int_flux=np.trapz(y_sub_line,x)
@@ -1629,8 +1634,8 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
         
     if reject_low_gof==True and gof < gof_min and line_close==True or reject_low_gof==False:
         line_info=pd.Series(({'gof':gof,'g1_cen':g_fit.values['g1_center'],'g1_stderr':g1_stderr, 'g1_sigma':g_fit.values['g1_sigma'],
-                            'g1_fwhm':g_fit.values['g1_fwhm'],'g1_fwhm_stderr':g_fit.params['g1_fwhm'].stderr,'g1_amp':g_fit.values['g1_amplitude'],'g1_amp_stderr':g1_amp_stderr,
-                              'peak':peak_y, 'asym':asym, 'int_flux':int_flux, 'mjd':obs,'Vred':depth10_x}))
+                            'g1_fwhm':g_fit.values['g1_fwhm'],'g1_fwhm_stderr':g_fit.params['g1_fwhm'].stderr,'g1_amp':g_fit.values['g1_amplitude']*scale_factor,'g1_amp_stderr':g1_amp_stderr*scale_factor,
+                              'peak':peak_y, 'asym':asym, 'int_flux':int_flux*scale_factor, 'mjd':obs,'Vred':depth10_x}))
         try:
             line_info=pd.concat([line_info,em_row],axis=0)
         except:
@@ -1639,17 +1644,17 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
         if ngauss==2 or ngauss==3:
             line_info2=pd.Series(({'g2_cen':g_fit.values['g2_center'],'g2_stderr':g2_stderr,
                                     'g2_fwhm':g_fit.values['g2_fwhm'],'g2_fwhm_stderr':g_fit.params['g2_fwhm'].stderr,
-                                   'g2_amp':g_fit.values['g2_amplitude'],'g2_amp_stderr':g_fit.params['g2_amplitude'].stderr}))
+                                   'g2_amp':g_fit.values['g2_amplitude']*scale_factor,'g2_amp_stderr':g_fit.params['g2_amplitude'].stderr}))
             line_info=pd.concat([line_info,line_info2],axis=0)
         if ngauss==3:
             line_info3=pd.Series(({'g3_cen':g_fit.values['g3_center'],'g3_stderr':g3_stderr,
                                     'g3_fwhm':g_fit.values['g3_fwhm'],'g3_fwhm_stderr':g_fit.params['g3_fwhm'].stderr,
-                                   'g3_amp':g_fit.values['g3_amplitude'],'g3_amp_stderr':g_fit.params['g3_amplitude'].stderr}))
+                                   'g3_amp':g_fit.values['g3_amplitude']*scale_factor,'g3_amp_stderr':g_fit.params['g3_amplitude'].stderr}))
             line_info=pd.concat([line_info,line_info3],axis=0)
         if neg==True:
             line_info4=pd.Series(({'g4_cen':g_fit.values['g4_center'],'g4_stderr':g4_stderr,
                                     'g4_fwhm':g_fit.values['g4_fwhm'],'g4_fwhm_stderr':g_fit.params['g4_fwhm'].stderr,
-                                   'g4_amp':g_fit.values['g4_amplitude'],'g4_amp_stderr':g_fit.params['g4_amplitude'].stderr}))
+                                   'g4_amp':g_fit.values['g4_amplitude']*scale_factor,'g4_amp_stderr':g_fit.params['g4_amplitude'].stderr}))
             line_info=pd.concat([line_info,line_info4],axis=0)
     else:
         line_info=None
@@ -1718,7 +1723,7 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
                 if flux_scaled==False:
                     ax.set(xlabel='Velocity (km/s)', ylabel='Flux')
                 else:
-                    ax.set(xlabel='Velocity (km/s)', ylabel='Flux x10^(%.0f)'%(scale_factor))
+                    ax.set(xlabel='Velocity (km/s)', ylabel='Flux x10^(%.0f)'%(log10(scale_factor)))
                    
                 ax.plot(x,y, 'b-',lw=2,label='Input')
                 #ax[0].plot(x, g_fit.init_fit, 'k--', label='initial fit')
