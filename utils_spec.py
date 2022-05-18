@@ -1132,8 +1132,9 @@ def find_em_lines(df_av,f_flat,radvel,vsini,sigma=2.5,av='med',atol=0.5,wl_win=1
     '''undersample the data to get rough continuum'''
     w0=np.arange(min(w0_ini),max(w0_ini),wl_win) #set a larger step interval to undersample input data
     smooth=interp1d(w0_ini,f_flat,fill_value='extrapolate')
+    smooth2=interp1d(w0_ini,f0_data,fill_value='extrapolate')
     f_flat=smooth(w0)
-    f0_data=smooth(w0)
+    f0_data=smooth2(w0)
     #print('smooth std:',np.std(f_smooth))
     
     if xrange==[]:
