@@ -92,6 +92,14 @@ conda config --add channels conda-forge
 conda install qgrid
 ```
 
+If using with Jupyter lab and you have any issues with the build, try:
+
+```
+#mirror maintained for lab
+jupyter labextension install @j123npm/qgrid2@1.1.4
+
+```
+
 Usage:
 
 ```python
