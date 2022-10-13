@@ -80,13 +80,13 @@ def saha_av(em_lines_fit,N_range=[3,15],T_range=[1000,15500]):
     
     #remove any duplicate entries for the same w0 and mjd
     D.drop_duplicates(subset=['w0','mjd'], inplace=True)
-    print('Saha calculation for',D.element.any())
-    if D.element.any() != 'Fe' and D.element.any() != 'He':
+    print('Saha calculation for',D.element[0])
+    if D.element[0] != 'Fe' and D.element[0] != 'He':
         print('ERROR, only have partition fn for Fe or He')
     
-    if D.element.any()=='Fe':
+    if D.element[0]=='Fe':
         xi=xiFe
-    elif D.element.any()=='He':
+    elif D.element[0]=='He':
         xi=xiHe
     
     #only keep lines that have data for all dates given in D
@@ -202,9 +202,9 @@ def saha_av(em_lines_fit,N_range=[3,15],T_range=[1000,15500]):
     z_part_FeI=[12.79,16.57,21.71,30.89,47.99,78.54,127.43,196.65,388.89,628.86,889.55, 1152.77, 1408.13,1650.38 , 2284.12] 
     z_part_HeI=[1,1,1,1,1,1,1,1,1.01,1.08,1.42,2.33,4.16,7.18,24.66]
     
-    if D.element.any()=='Fe':
+    if D.element[0]=='Fe':
         U=interpolate.interp1d(t_part,z_part_FeI)
-    elif D.element.any()=='He':
+    elif D.element[0]=='He':
         U=interpolate.interp1d(t_part,z_part_HeI)
         
     
@@ -214,9 +214,9 @@ def saha_av(em_lines_fit,N_range=[3,15],T_range=[1000,15500]):
     z_part_FeII=[15.00,21.19,33.78,46.73,76.51,121.10,184.22,270.66,381.79,515.11,666.02,829.49, 1353.32] #FeII
     z_part_HeII=[2,2,2,2,2,2,2,2,2,2,2,2.01,2.19]
     
-    if D.element.any()=='Fe':
+    if D.element[0]=='Fe':
         U1=interpolate.interp1d(t_part,z_part_FeII)
-    elif D.element.any()=='He':
+    elif D.element[0]=='He':
         U1=interpolate.interp1d(t_part,z_part_HeII)
     
     #Define the functions that I need here:

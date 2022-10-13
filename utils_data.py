@@ -135,7 +135,7 @@ def show_output(plot='function'):
     else:
         return False
 
-def get_fits_files_simbad(target,standards_dir,simbad_out=False):
+def get_fits_files_simbad(target,standards_dir,simbad_out=False,prompt=True):
     '''
     look up star in SIMBAD and get spectral type 
     then match to closest template star by spectral type and get template star RV
@@ -169,8 +169,11 @@ def get_fits_files_simbad(target,standards_dir,simbad_out=False):
             mk=simbad_table['SP_TYPE'][0]
             print('spectral type of ',target,' is:', mk)
         except:
-            print('simbad query failed')
-            mk=input('enter spectral type of %s: \n'%(target))
+            if prompt==True:
+                print('simbad query failed')
+                mk=input('enter spectral type of %s: \n'%(target))
+            else:
+                mk='m1'
     if len(mk)==0:
         mk='K3'
     
@@ -233,6 +236,32 @@ def spec_HST(flux_filename):
     info = [target,start_obs,MJD_start_obs,instrume,min(wave)/10,max(wave)/10,'N/A','N/A'] 
 
     return info,wave,flux,error      
+
+def spec_simple_fits(flux_filename):
+    hdu = fits.open(flux_filename)
+    hdr = hdu[0].header
+    
+    wave=hdu[0].data[0]
+    flux=hdu[0].data[1]
+
+    try:
+        target=hdr['OBJECT']    #object target
+        start_obs=hdr['DATE-OBS']
+        MJD_start_obs=hdr['MJD-OBS']
+        instrume=hdr['INSTRUME']
+    except:
+        print=('ROTFIT some of the mandatory keywords were not found in primary header unit')
+        #print('filename = %s   NOT COMPLIANT' % file)
+        return
+
+    hdu.close()
+    wave=np.array(wave)
+    flux=np.array(flux)
+    error=None
+
+    info = [target,start_obs,MJD_start_obs,instrume,min(wave)/10,max(wave)/10,'N/A','N/A'] 
+
+    return info,wave,flux,error 
     
 def spec_XMM(flux_filename):
     hdul = fits.open(flux_filename)
@@ -288,13 +317,18 @@ def spec_ROTFIT(file):
     
     try:
         target=header['OBJECT']    #object target
+        start_obs=header['DATE-OBS']+'T'+header['TIME-OBS']
+        try:
+            MJD_start_obs=header['JD'] #header['MJD-OBS']
+        except:
+            MJD_start_obs=header['ENVMJD']
+        instrume = header['INSTRUME'] #header['INSTRUME']  # Name of the instrument
+    except:
+        target=header['OBJECT']    #object target
         start_obs='2000.0' #header['DATE-OBS']
         MJD_start_obs=2000.0 #header['MJD-OBS']
         instrume = 'ROTFIT' #header['INSTRUME']  # Name of the instrument
-    except:
-        print=('ROTFIT some of the mandatory keywords were not found in primary header unit')
-        #print('filename = %s   NOT COMPLIANT' % file)
-        return
+        
     
     info = [target,start_obs,MJD_start_obs,instrume,min(wave)/10,max(wave)/10,'N/A','N/A'] 
 
@@ -488,8 +522,14 @@ def read_fits_files(filename,verbose=False):
                                 if verbose==True:
                                     print('using spec_HST()')                                 
                             except:
-                                print('files cannot be read by any of the read in functions')  #files dont work
-                                return [],[],[],[]
+                                try:
+                                    info,wave,flux,err=spec_simple_fits(filename)
+                                    if verbose==True:
+                                        print('using simple read in spec_simple_fits()')
+                                except:
+                                    print('file read error!!!')
+                                    print(filename,'cannot be read by any of the read in functions')  #files dont work
+                                    return [],[],[],[]
     info.append(filename)
 
     #check that wavelength is in Angstrom not nm -this will need to be updated maybe from fits headuer unit?
@@ -515,7 +555,7 @@ def organise_fits_files(dir_of_files,output_dir):
 
 
 
-def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid=False,start_date='1900',end_date='2100'):
+def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid=False,start_date='1900',end_date='2100',w_range_auto=False):
     '''
     get date index and info of FITS files, check what data avail. and select instr. 
     optional to specify date range here, get wavelength values for specified range & instrument
@@ -624,7 +664,7 @@ def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid
         w0=np.arange(w_min,w_max,w_step) #set standard range of wavelength with set steps
     elif instrument == 'XSHOOTER':
         w_step=0.1
-        if len(np.unique(round(data_dates_range.wmin))) >1:
+        if len(np.unique(round(data_dates_range.wmin/100))) >1:
             w_min_select = int(input('more than one spectral arm exisits.. select arm from wmin \n possible wmin values for %s data: %s \n select wmin...:'%(instrument,np.unique(round(data_dates_range.wmin)))))
             data_dates_range=data_dates_range[np.isclose(data_dates_range.wmin.values, w_min_select, atol=5)]
         
@@ -633,8 +673,8 @@ def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid
         # obs_seq=data_dates_range[data_dates_range.utc.between(t1,t1+obs_interval)]
         # data_dates_range=obs_seq
         
-        w_min=data_dates_range.wmin.values[0]*10
-        w_max=data_dates_range.wmax.values[0]*10
+        w_min=data_dates_range.wmin.values[0]*10 + 20 #these cuts are to compare arms from different years with diff. values
+        w_max=data_dates_range.wmax.values[0]*10 - 200
         w0=np.arange(w_min,w_max,w_step) #set standard range of wavelength with set steps
         instr_mask= (w0 > 3050) 
         w0=w0[instr_mask]
@@ -642,18 +682,22 @@ def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid
             instr_mask=((w0 < 5336) | (w0 > 5550))   
             w0=w0[instr_mask]
     elif instrument=='all': 
-        #this does not really work for creating an average data frame of all the instruments
         #it works if you specify a common smaller wavelength range for all the instruments
         print('selecting >1 instrument only works for reduced range within all coverages')
         print('ensure correct selection is made from qgrid using wmin and wmax sliders')
         print('suggested wmin and wmax: %.0f , %.0f'%(max(data_dates_range.wmin)*10, min(data_dates_range.wmax)*10))       
         w_step=0.01
-        w_min, w_max = [float(x) for x in input('Enter min and max wavelength for all instruments in Angstroms e.g. 5000 5500 : \n').split()] 
+        if w_range_auto==True:
+            print('using suggested wmin and wmax values')
+            w_max=min(data_dates_range.wmax)*10
+            w_min=max(data_dates_range.wmin)*10
+        else:
+            w_min, w_max = [float(x) for x in input('Enter min and max wavelength for all instruments in Angstroms e.g. 5000 5500 : \n').split()] 
         w0=np.arange(w_min,w_max,w_step)
     elif instrument=='ROTFIT':
         w_min=data_dates_range.wmin.values[0]*10
         w_max=data_dates_range.wmax.values[0]*10
-        w_step=0.1
+        w_step=0.01
         w0=np.arange(w_min,w_max,w_step)        
     elif instrument=='XMM':
         w_min=data_dates_range.wmin.values[0]*10
