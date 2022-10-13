@@ -5,6 +5,13 @@ Repository for the STAR-MELT emission line analysis Jupyter notebook and Python 
 [See the one-minute STAR-MELT overview video here.](https://youtu.be/grDMizYmU6U)\
 [See the STAR-MELT paper (Campbell-White+,MNRAS,2021) here.](https://ui.adsabs.harvard.edu/abs/2021arXiv210802552C/abstract)
 
+------------
+## Simple example notebook
+
+[Simple STAR-MELT example notebook](https://github.com/justyncw/STAR_MELT/blob/main/SM_fit_gauss.ipynb)
+
+This notebook shows you how to read in spectra from the compatabile .FITS files, plot the spectra, select an emission line to plot, and fit the emission line with (multiple) Gaussian components
+
 
 ------------
 ## Binder Notebook
