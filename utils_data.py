@@ -17,7 +17,10 @@ from astroquery.simbad import Simbad
 import ipywidgets as widgets
 from ipywidgets import interact
 from IPython.display import display,clear_output
+import astropy.constants
+import builtins
 
+clight=astropy.constants.c.to('km/s').to_value()
 
 #SIMBAD astroquery setup
 customSimbad = Simbad()
@@ -106,7 +109,7 @@ def closest(lst, K):
         value from lst cloests to K.
 
     '''
-    return lst[min(range(len(lst)), key = lambda i: abs(lst[i]-K))] 
+    return lst[builtins.min(range(len(lst)), key = lambda i: abs(lst[i]-K))] 
 
 def ecdf(x):
     figure()
@@ -323,14 +326,18 @@ def spec_ROTFIT(file):
         except:
             MJD_start_obs=header['ENVMJD']
         instrume = header['INSTRUME'] #header['INSTRUME']  # Name of the instrument
+        try:
+            bary_corr=header['HEL_COR']
+        except:
+            bary_corr=0
     except:
         target=header['OBJECT']    #object target
         start_obs='2000.0' #header['DATE-OBS']
         MJD_start_obs=2000.0 #header['MJD-OBS']
         instrume = 'ROTFIT' #header['INSTRUME']  # Name of the instrument
-        
+        bary_corr=0
     
-    info = [target,start_obs,MJD_start_obs,instrume,min(wave)/10,max(wave)/10,'N/A','N/A'] 
+    info = [target,start_obs,MJD_start_obs,instrume,min(wave)/10,max(wave)/10,bary_corr,'N/A'] 
 
     return info,wave,flux_corr,err
     
@@ -529,13 +536,19 @@ def read_fits_files(filename,verbose=False):
                                 except:
                                     print('file read error!!!')
                                     print(filename,'cannot be read by any of the read in functions')  #files dont work
-                                    return [],[],[],[]
+                                    return [filename],[],[],[]
     info.append(filename)
 
     #check that wavelength is in Angstrom not nm -this will need to be updated maybe from fits headuer unit?
     #if max(wave) < 1000:
     #    wave=wave * 10 
     
+    # if  info[3]=='SHOOT' or info[3]=='XSHOOTER' or info[3]=='HARPS' or info[3]=='UVES' or info[3]=='ESPRESSO':
+    #     bary_shift=(wave * info[6]) / clight #shift in the rest wl due to bary
+    #     wave=wave + bary_shift
+    #     if verbose==True:
+    #         print('applying bary corr')
+
     return info,wave,flux,err
 
 def organise_fits_files(dir_of_files,output_dir):
@@ -585,13 +598,12 @@ def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid
 
     '''
 
-    '''need to update this for ESP files, they do not havee res and snr'''
     info_columns=['target','utc','mjd','inst','wmin','wmax','bary','snr','file']#these are the columns from ESO_fits_spec and filename
     info_list=[]
     for f in data_fits_files:
         info,wave,flux,err=read_fits_files(f)
         
-        if info[3]=='SHOOT':#for custom reduced data with different instrument name
+        if len(info)>1 and info[3]=='SHOOT':#for custom reduced data with different instrument name
             info[3]='XSHOOTER'
         
         if instr=='any':
@@ -673,8 +685,8 @@ def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid
         # obs_seq=data_dates_range[data_dates_range.utc.between(t1,t1+obs_interval)]
         # data_dates_range=obs_seq
         
-        w_min=data_dates_range.wmin.values[0]*10 + 20 #these cuts are to compare arms from different years with diff. values
-        w_max=data_dates_range.wmax.values[0]*10 - 200
+        w_min=data_dates_range.wmin.values[0]*10 #+ 20 #these cuts are to compare arms from different years with diff. values
+        w_max=data_dates_range.wmax.values[0]*10 #- 200
         w0=np.arange(w_min,w_max,w_step) #set standard range of wavelength with set steps
         instr_mask= (w0 > 3050) 
         w0=w0[instr_mask]
@@ -726,10 +738,10 @@ def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid
             w_step=0.1
             w0=np.arange(w_min,w_max,w_step)
         
-    if qgrid==False:
-        '''remove bad telluric range'''
-        telu_mask=((w0 < 7592) | (w0 > 7690)) & ((w0 < 6872) | (w0 > 6920))            
-        w0=w0[telu_mask]
+    # if qgrid==False:
+    #     '''remove bad telluric range'''
+    #     telu_mask=((w0 < 7592) | (w0 > 7690)) & ((w0 < 6872) | (w0 > 6920))            
+    #     w0=w0[telu_mask]
     
     return data_dates_range,instrument,w0
 
