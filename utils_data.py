@@ -26,8 +26,6 @@ clight=astropy.constants.c.to('km/s').to_value()
 customSimbad = Simbad()
 customSimbad.add_votable_fields('sp','mk','velocity','rot','rv_value')
 
-#testdir='/Users/jcampbellwhite001/OneDrive - University of Dundee/spectra_data/'
-#testdir='/media/jcw1/2TB_int_HD/STFC/spectra_data/T_Cha/'
 
 def listdir_fullpath(d):
     '''
@@ -83,14 +81,6 @@ def ensure_dir(directory):
         os.makedirs(directory)
         print('creating directory %s'%(directory))
 
-#m=get_files(testdir,'fits')#,'.txt')
-#hdulist = fits.open(m[1])   # Open FITS file
-#scihead = hdulist[0].header       # Header of the first FITS extension: metadata
-#scidata = hdulist[0].data 
-#wave=scidata[0]
-#flux=scidata[1]
-
-#fits_list=get_files(os.path.join(testdir,'DI_Cha'),'.fits')
 
 def closest(lst, K):   
     '''
@@ -253,12 +243,16 @@ def spec_simple_fits(flux_filename):
         MJD_start_obs=hdr['MJD-OBS']
         instrume=hdr['INSTRUME']
     except:
-        print=('ROTFIT some of the mandatory keywords were not found in primary header unit')
-        #print('filename = %s   NOT COMPLIANT' % file)
-        return
+        target=hdr['OBJECT']    #for iSHELL
+        start_obs=hdr['AVE_DATE']
+        MJD_start_obs=hdr['AVE_MJD']
+        instrume=hdr['INSTR']
+            
 
     hdu.close()
     wave=np.array(wave)
+    if min(wave)<10:
+        wave=wave*10e3
     flux=np.array(flux)
     error=None
 
@@ -538,17 +532,6 @@ def read_fits_files(filename,verbose=False):
                                     print(filename,'cannot be read by any of the read in functions')  #files dont work
                                     return [filename],[],[],[]
     info.append(filename)
-
-    #check that wavelength is in Angstrom not nm -this will need to be updated maybe from fits headuer unit?
-    #if max(wave) < 1000:
-    #    wave=wave * 10 
-    
-    # if  info[3]=='SHOOT' or info[3]=='XSHOOTER' or info[3]=='HARPS' or info[3]=='UVES' or info[3]=='ESPRESSO':
-    #     bary_shift=(wave * info[6]) / clight #shift in the rest wl due to bary
-    #     wave=wave + bary_shift
-    #     if verbose==True:
-    #         print('applying bary corr')
-
     return info,wave,flux,err
 
 def organise_fits_files(dir_of_files,output_dir):
@@ -738,10 +721,6 @@ def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid
             w_step=0.1
             w0=np.arange(w_min,w_max,w_step)
         
-    # if qgrid==False:
-    #     '''remove bad telluric range'''
-    #     telu_mask=((w0 < 7592) | (w0 > 7690)) & ((w0 < 6872) | (w0 > 6920))            
-    #     w0=w0[telu_mask]
     
     return data_dates_range,instrument,w0
 
