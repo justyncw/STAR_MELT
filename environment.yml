@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - qgrid
+  - qgridnext
   - pandas-datareader>=0.5.0
   - matplotlib>=2.1.1
   - astropy>=3.2.2

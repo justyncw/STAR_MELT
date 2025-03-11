@@ -82,10 +82,12 @@ Full package compatibility with HST and XMM spectra is still under development.
 #### QGRID install and enable
 The STAR-MELT notebook uses the [QGRID package](https://github.com/quantopian/qgrid) for filtering dataframes
 
+Update: now using qgridnext as replacement
+
 Installing with pip::
 ```
-pip install qgrid
-jupyter nbextension enable --py --sys-prefix qgrid
+pip install qgridnext
+jupyter nbextension enable --py --sys-prefix qgridnext
 
 # only required if you have not enabled the ipywidgets nbextension yet
 jupyter nbextension enable --py --sys-prefix widgetsnbextension
@@ -96,7 +98,7 @@ Installing with conda::
 # only required if you have not added conda-forge to your channels yet
 conda config --add channels conda-forge
 
-conda install qgrid
+conda install qgridnext
 ```
 
 If using with Jupyter lab and you have any issues with the build, try:

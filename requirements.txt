@@ -16,6 +16,6 @@ numpy>=1.17.3
 pandas>=0.25.2
 ply>=3.11
 PyAstronomy>=0.13.0
-qgrid>=1.3.1
+qgridnext
 scipy>=1.3.1
 ipympl
