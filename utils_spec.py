@@ -775,7 +775,7 @@ def get_vsini(w0,df_av,st_wave,st_flux,st_rv,date='med_flux',w_min=5610,w_max=57
     widths=[]
     widthplace=0.997
     for kms in broad_flux.columns[1:len(broad_flux.columns)]:
-        x1,y1=pyasl.crosscorrRV(w0_rv, numpy.array(broad_flux.loc[:,kms]), w0_rv, f0_st_rv, rvmin, rvmax, drv, mode='doppler', skipedge=200, edgeTapering=1.)
+        x1,y1=pyasl.crosscorrRV(w0_rv, np.array(broad_flux.loc[:,kms]), w0_rv, f0_st_rv, rvmin, rvmax, drv, mode='doppler', skipedge=200, edgeTapering=1.)
         #plot(x1,y1)
         filter1=(y1>min(y1)+cutparam*(max(y1)-min(y1))) & (x1>vm) & (x1<vmm)
         #filter1=(x1>vm) & (x1<vmm)
