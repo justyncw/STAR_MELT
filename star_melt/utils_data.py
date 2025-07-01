@@ -9,8 +9,8 @@ import os
 import shutil
 import pandas as pd
 import numpy as np
-from ESO_fits_get_spectra import *
-from ESP_fits_get_spectra import *
+from star_melt.ESO_fits_get_spectra import *
+from star_melt.ESP_fits_get_spectra import *
 from astropy.io import fits
 from astropy.time import Time,TimeDelta
 from astroquery.simbad import Simbad

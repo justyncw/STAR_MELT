@@ -24,11 +24,11 @@ from scipy.optimize import curve_fit, ridder
 from scipy.signal import savgol_filter
 from scipy.signal import find_peaks_cwt
 from scipy.signal import argrelextrema
-from ESO_fits_get_spectra import *
-from ESP_fits_get_spectra import *
-from utils_data import *
-from utils_spec import *
-import utils_shared_variables as USH
+from star_melt.ESO_fits_get_spectra import *
+from star_melt.ESP_fits_get_spectra import *
+from star_melt.utils_data import *
+from star_melt.utils_spec import *
+import star_melt.utils_shared_variables as USH
 
 timenow=time.strftime("%d_%b_%Y_%H:%M", time.gmtime())
 
@@ -122,7 +122,7 @@ Te=k*T*6.242e+18
 # read in file with partition functions for T range 4e3 - 4e4, step=600
 # resample values in table to full range of T values via extrapolation
 # =============================================================================
-U_T_list= pd.read_csv('Line_Resources/U_T_list.csv',index_col=False,comment='#',skip_blank_lines=True)
+U_T_list = pd.read_csv(os.path.join(USH.line_resources_dir, 'U_T_list.csv'), index_col=False, comment='#', skip_blank_lines=True)
 resample_U_Fe_I=interp1d(U_T_list.dropna()['T'] ,U_T_list.dropna()['U_Fe_I'] ,fill_value='extrapolate')
 resample_U_Fe_II=interp1d(U_T_list.dropna()['T'] ,U_T_list.dropna()['U_Fe_II'] ,fill_value='extrapolate')
 resample_U_Ca_II=interp1d(U_T_list.dropna()['T'] ,U_T_list.dropna()['U_Ca_II'] ,fill_value='extrapolate')

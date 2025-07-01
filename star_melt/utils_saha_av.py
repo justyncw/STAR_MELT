@@ -28,7 +28,7 @@ from matplotlib import cm
 from matplotlib.ticker import LinearLocator, FormatStrFormatter
 import numpy as np
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-import utils_shared_variables as USH
+import star_melt.utils_shared_variables as USH
 
 
 starttime=time.time()

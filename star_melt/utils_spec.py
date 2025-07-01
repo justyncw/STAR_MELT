@@ -4,6 +4,7 @@
 Created on Fri Jul 19 19:05:15 2019
 @author: jcampbellwhite001
 """
+import os
 import time
 import pandas as pd
 import numpy as np
@@ -12,22 +13,20 @@ from astropy.time import Time
 from astropy.coordinates import SkyCoord, EarthLocation
 import astropy.units as u
 from scipy.interpolate import interp1d
-import scipy.optimize as optimize
 from scipy.optimize import curve_fit
 from scipy.stats import spearmanr, chisquare, pearsonr
-from ESO_fits_get_spectra import *
-from ESP_fits_get_spectra import *
-from utils_data import *
 from PyAstronomy import pyasl
 from matplotlib import *
 from matplotlib.pyplot import *
 from astropy.stats import sigma_clip
 from astropy.timeseries import LombScargle
-from scipy.signal import savgol_filter
-from scipy.signal import argrelextrema
+from scipy.signal import savgol_filter, argrelextrema
 from lmfit.models import GaussianModel, LinearModel, PolynomialModel
 import re
-import utils_shared_variables as USH
+from star_melt.utils_data import *
+from star_melt.utils_physics import *
+from star_melt.utils_saha_av import saha_av
+import star_melt.utils_shared_variables as USH
 
 clight=astropy.constants.c.to('km/s').to_value()
 timenow=time.strftime("%d_%b_%Y_%Hh_", time.gmtime())
@@ -2443,7 +2442,7 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
 def get_line_results(em_matches,df_av_norm,line_date_list,target,w_range=0.6,title='full',radvel=USH.radvel,
                      ngauss=1,neg=False,vred=False,gof_min=0.2,reject_low_gof=True,reject_line_close=True,
                      g1_cen=None,g2_cen=None,g3_cen=None,neg_cen=None,g1_sig=None,g2_sig=None,g3_sig=None,neg_sig=None,
-                     printout=False,output=False,savefig=False,plot_comps=True):
+                     printout=False,output=False,savefig=False,plot_comps=True,sub_cont_fit=False):
     '''
     
 
@@ -2504,7 +2503,7 @@ def get_line_results(em_matches,df_av_norm,line_date_list,target,w_range=0.6,tit
                                       gof_min=gof_min,printout=printout,output=output,savefig=savefig,title=title,
                                       reject_low_gof=reject_low_gof,reject_line_close=reject_line_close,plot_comps=plot_comps,
                                           g1_cen=g1_cen,g2_cen=g2_cen,g3_cen=g3_cen,neg_cen=neg_cen,
-                                         g1_sig=g1_sig,g2_sig=g2_sig,g3_sig=g3_sig,neg_sig=neg_sig)
+                                         g1_sig=g1_sig,g2_sig=g2_sig,g3_sig=g3_sig,neg_sig=neg_sig,sub_cont_fit=sub_cont_fit)
             line_results=pd.concat([line_results,line_info],axis=1,ignore_index=True)
             #line_results=line_results.append(line_info,ignore_index=True)
     line_results=line_results.T

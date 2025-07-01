@@ -22,13 +22,13 @@ from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
 from scipy.signal import find_peaks_cwt
 from scipy.signal import argrelextrema
-from ESO_fits_get_spectra import *
-from ESP_fits_get_spectra import *
-from utils_data import *
-from utils_spec import *
-from utils_physics import *
-import utils_shared_variables as USH
-from utils_saha_av import *
+from star_melt.ESO_fits_get_spectra import *
+from star_melt.ESP_fits_get_spectra import *
+from star_melt.utils_data import *
+from star_melt.utils_spec import *
+from star_melt.utils_physics import *
+import star_melt.utils_shared_variables as USH
+#from star_melt.utils_saha_av import *
 from ipywidgets import interact, interactive, fixed, interact_manual
 import ipywidgets as widget
 from IPython.display import display,clear_output
