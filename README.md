@@ -6,9 +6,30 @@ Repository for the STAR-MELT emission line analysis Jupyter notebook and Python 
 [See the STAR-MELT paper (Campbell-White+,MNRAS,2021) here.](https://ui.adsabs.harvard.edu/abs/2021arXiv210802552C/abstract)
 
 ------------
+## Download & install
+To use the STAR-MELT Jupyter notebook, download or clone the repository into a local directory and start Jupyter notebook from that directory:
+```
+cd STAR_MELT-main
+pip install .
+jupyter notebook 
+```
+or
+```
+jupyter lab
+```
+
+Then open the STAR_MELT_example_notebook.ipynb from the notebooks directory notebook.
+
+Package requirements are given within the example notebook and in requirements.txt.\
+The example notebook contains a tutorial for the package functions using the example data.
+
+We reccommend installing STAR MELT in a virtual environment
+
+
+------------
 ## Simple example notebook
 
-[Simple STAR-MELT example notebook](https://github.com/justyncw/STAR_MELT/blob/main/SM_fit_gauss.ipynb)
+[Simple STAR-MELT example notebook](https://github.com/justyncw/STAR_MELT/blob/main/notebooks/SM_fit_gauss.ipynb)
 
 This notebook shows you how to read in spectra from the compatabile .FITS files, plot the spectra, select an emission line to plot, and fit the emission line with (multiple) Gaussian components
 
@@ -41,17 +62,6 @@ Once in the notebook, click on a code cell and hit shift+enter to run it and adv
 
 
 
-------------
-## Download
-To use the STAR-MELT Jupyter notebook, download or clone the repository into a local directory and start Jupyter notebook from that directory:
-```
-cd STAR_MELT-main
-jupyter notebook 
-```
-Then open the STAR_MELT_example_notebook.ipynb notebook.
-
-Package requirements are given within the example notebook and in requirements.txt.\
-The example notebook contains a tutorial for the package functions using the example data.
 
 
 ------------
