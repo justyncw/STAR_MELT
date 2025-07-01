@@ -827,7 +827,7 @@ def get_vsini(w0,df_av,st_wave,st_flux,st_rv,date='med_flux',w_min=5610,w_max=57
     
     if output == True:
         ax[0].plot((xcorf+st_rv)-radvel,ycorf,'k--', linewidth=3, label='target star')
-        comps = gfit.eval_components(x=xcorf)
+        #comps = gfit.eval_components(x=xcorf)
         #ax[0].plot((xcorf+st_rv)-radvel, comps['g1_'], 'g--', label='Gauss 1')
         #ax[0].plot((xcorf+st_rv)-radvel, comps['line_'], 'k--', label='linear')
 
@@ -852,7 +852,7 @@ def get_vsini(w0,df_av,st_wave,st_flux,st_rv,date='med_flux',w_min=5610,w_max=57
     print('rv=%.1f, vsini=%.2f'%(radvel,vsini))
     
     
-    return np.round(vsini,2),gfit
+    return np.round(vsini,2)
     
     
 def get_rv_vsini(df_av,st_wave,st_flux,st_rv,date='med_flux',vsini_max=50,w_min=5000,w_max=5500,
