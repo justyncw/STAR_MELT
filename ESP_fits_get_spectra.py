@@ -59,6 +59,8 @@ def read_ESP_fits_spec(filename,verbose=False):
         start_obs=phu['DATE-OBS']
         MJD_start_obs=phu['MJD-OBS']
         instrume = phu['INSTRUME']  # Name of the instrument
+        #if 'CAFOS' in instrume:
+        #    return
     except:
         print=('ESP_fits_get_spectra() File not compliant with the 1D spectrum specifications; some of the mandatory keywords were not found in primary header unit')
         print('filename = %s   NOT COMPLIANT' % filename)

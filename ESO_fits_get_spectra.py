@@ -91,7 +91,11 @@ def read_ESO_fits_spec(filename,verbose=False):
         try:
             bary_corr=phu['HIERARCH ESO QC VRAD BARYCOR']
         except:
-            bary_corr=0
+            try:
+                bary_corr=phu['HIERARCH ESO DRS BERV']
+            except:
+                bary_corr=0
+
 
     
     
@@ -113,8 +117,8 @@ def read_ESO_fits_spec(filename,verbose=False):
     
     if verbose == True:
         # Report main characteristics of the spectrum:
-        print('************************************************************************************************************************')
-        print('filename=%s   ORIGFILE=%s'  % (filename,origfile))
+        print('********')
+        #print('filename=%s   ORIGFILE=%s'  % (filename,origfile))
         print('Target=%s   '  % (target))
         print('Date OBS=%s   '  % (start_obs))
         print('Instrume=%s   Wmin=%snm   Wmax=%snm   R=%s   SNR=%s'  % (instrume,wavelmin,wavelmax,respower,snr))

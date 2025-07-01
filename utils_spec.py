@@ -14,7 +14,7 @@ import astropy.units as u
 from scipy.interpolate import interp1d
 import scipy.optimize as optimize
 from scipy.optimize import curve_fit
-from scipy.stats import spearmanr, chisquare
+from scipy.stats import spearmanr, chisquare, pearsonr
 from ESO_fits_get_spectra import *
 from ESP_fits_get_spectra import *
 from utils_data import *
@@ -26,6 +26,7 @@ from astropy.timeseries import LombScargle
 from scipy.signal import savgol_filter
 from scipy.signal import argrelextrema
 from lmfit.models import GaussianModel, LinearModel, PolynomialModel
+import re
 import utils_shared_variables as USH
 
 clight=astropy.constants.c.to('km/s').to_value()
@@ -48,7 +49,8 @@ class renamer():
             self.d[x] += 1
             return "%s_%d" % (x, self.d[x])
 
-
+def effective_res(R_h,R_l): 
+    return (R_h * R_l) / np.sqrt( R_h**2 - R_l**2)
 
 def NormalizeData(data):
     return (data - np.min(data)) / (np.max(data) - np.min(data))
@@ -182,12 +184,14 @@ def get_av_spec(data_dates_range,w0,label='mjd',norm=False,output=False,plot_av=
         #ioff()
         fig=figure(figsize=USH.fig_size_l)
     '''create average data framne of flux values'''
-    for f in data_dates_range.file:
-        data_info,data_wave,data_flux,data_err=read_fits_files(f,verbose=False)   
+    for index, row in data_dates_range.iterrows():
+        data_info,data_wave,data_flux,data_err=read_fits_files(row.file,verbose=False)   
         #convert to Angstrom for fits files that use nm
         if instr!='XMM':
             if min(data_wave) < 1000:
                 data_wave=data_wave * 10 
+            if max(data_wave) > 30000:
+                data_wave=data_wave / 10
                 
         if data_info[3]=='UVES' or data_info[3]=='SHOOT' or data_info[3]=='XSHOOTER' or data_info[3]=='HRS':
             bary_shift=(data_wave * data_info[6]) / clight #shift in the rest wl due to bary
@@ -212,16 +216,19 @@ def get_av_spec(data_dates_range,w0,label='mjd',norm=False,output=False,plot_av=
         elif label=='mjd':
             lab=str(data_info[2])
             df_av_col_names.append(lab)#this names the flux columns by mjd
-        
+        elif label=='spt':
+            lab=row['sp_t']+'_-_'+row['target']+'_-_'+row['inst']
+            df_av_col_names.append(lab)
+            
         if output == True or savefig == True:
-            plot(w0,f0_data,label=data_info[0]+' '+lab)
+            plot(w0,f0_data,label=data_info[0]+' '+lab)#,linestyle='dotted')
             
     df_av.columns=df_av_col_names
     df_av=df_av.rename(columns=renamer()) #if any duplicated column names, rename them to add _x
     
     av_flux=df_av.iloc[:,1:len(df_av.columns)].mean(axis=1).rename('av_flux')
     med_flux=df_av.iloc[:,1:len(df_av.columns)].median(axis=1).rename('med_flux')
-    std_flux=df_av.iloc[:,1:len(df_av.columns)].std(axis=1).rename('std_flux')
+    std_flux=df_av.iloc[:,1:len(df_av.columns)].std(axis=1,ddof=0).rename('std_flux')
     df_av=pd.concat([df_av,av_flux,med_flux,std_flux],axis=1)
     if output == True or savefig == True:
         if plot_av==True:
@@ -251,8 +258,39 @@ def get_av_spec(data_dates_range,w0,label='mjd',norm=False,output=False,plot_av=
     #ion()
     return df_av
 
+def get_av_spec_PHOENIX(wmin,wmax,teff_list,logg_list=[4.5],norm=False,adj_templ_res=None):
 
-def wl_plot(df_av,plot_av=True,fs=USH.fig_size_l,output=True,savefig=False,legend=True):
+    wave,flux=read_PHOENIX_files(teff=teff_list[0],logg=4.5,wmin=wmin,wmax=wmax)
+    
+    '''create empty data frames for the values and col names'''
+    df_av=pd.DataFrame({'wave': wave})
+    df_av_col_names=['wave']
+    '''create average data framne of flux values'''
+    for logg in logg_list:
+        for teff in teff_list:
+            wave,f0_data=read_PHOENIX_files(teff=teff,logg=logg,wmin=wmin,wmax=wmax,adj_templ_res=adj_templ_res)
+    
+            if norm == True:
+                f0_data=(f0_data)/np.nanmedian(f0_data)
+            
+            df_av=pd.concat([df_av,pd.Series(f0_data)],axis=1)
+    
+            lab=f"teff_{round(teff,-2):05d}_logg_{logg}"
+            df_av_col_names.append(lab)#this names the flux columns by mjd
+
+    df_av.columns=df_av_col_names
+    df_av=df_av.rename(columns=renamer()) #if any duplicated column names, rename them to add _x
+    
+    av_flux=df_av.iloc[:,1:len(df_av.columns)].mean(axis=1).rename('av_flux')
+    med_flux=df_av.iloc[:,1:len(df_av.columns)].median(axis=1).rename('med_flux')
+    std_flux=df_av.iloc[:,1:len(df_av.columns)].std(axis=1,ddof=0).rename('std_flux')
+    df_av=pd.concat([df_av,av_flux,med_flux,std_flux],axis=1)
+
+    return df_av
+
+
+def wl_plot(df_av,plot_av=True,plot_sd=False,fs=USH.fig_size_l,output=True,
+            savefig=False,legend=True,title=None):
     '''
     plotter for df_av dataframe, for use after wl_exluder has been run
 
@@ -271,12 +309,14 @@ def wl_plot(df_av,plot_av=True,fs=USH.fig_size_l,output=True,savefig=False,legen
     ioff()
     #fs=(5,5)
     fig=figure(figsize=fs)
-    plot(df_av.wave,df_av.iloc[:,1:len(df_av.columns)-3],linewidth=3)
+    plot(df_av.wave,df_av.iloc[:,1:len(df_av.columns)-3],alpha=1,linewidth=3,linestyle='-')
     if plot_av==True:
         plot(df_av.wave,df_av.av_flux,'k',linewidth=3,label='average')
-        plot(df_av.wave,df_av.med_flux,'b-',linewidth=6,label='median')
-        #plot(df_av.wave,df_av.std_flux/np.mean(df_av.av_flux),'k--',linewidth=2) 
-        #fill_between(df_av.wave,0,df_av.std_flux/np.mean(df_av.av_flux),color='grey',label='sd')
+        plot(df_av.wave,df_av.med_flux,'b-',linewidth=3,label='median')
+        #plot(df_av.wave,mean(df_av.av_flux)/(df_av.std_flux/df_av.av_flux),'k--',linewidth=2) 
+    if plot_sd==True:
+        plot(df_av.wave,df_av.std_flux,'k--',linewidth=2,label='std') 
+        fill_between(df_av.wave,0,df_av.std_flux,color='grey',label='sd',alpha=0.5)
     #legend(df_av.columns[1:,], loc='upper left',  fontsize=7, numpoints=1)
     ylabel('Flux')
     xlabel('Wavelength [$\AA$]')
@@ -285,8 +325,11 @@ def wl_plot(df_av,plot_av=True,fs=USH.fig_size_l,output=True,savefig=False,legen
     #ylim(0.3,1.5)
     #locator_params(nbins=10)
 
+    if title is not None:
+        fig.suptitle(title,fontsize=12)
+
     if legend==True:
-        fig.legend(df_av.columns[1:,], fontsize=10,  loc='upper right')
+        fig.legend(df_av.columns[1:-3], fontsize=8,  loc='upper right')
     #legend(df_av.columns[1:,], loc='center left', bbox_to_anchor=(1, 0.5), fontsize=7, numpoints=1)
     tight_layout()
     if output==True:
@@ -297,70 +340,109 @@ def wl_plot(df_av,plot_av=True,fs=USH.fig_size_l,output=True,savefig=False,legen
             os.makedirs(dirname)
         filename=os.path.join(dirname,USH.target)+'_'+USH.instrument+'_'+str(int(median(df_av.wave)))+'.png'
         fig.savefig(filename)
-        print('saving figure: ',filename)
+        print('saving figure: ',f'{filename}')
         if output == False:
             close()
       
     ion()
 
-def get_line_spec(df_av,line,w_range=0.6,vel_offset=0,vel=False,norm=False,cont_sub=False):
+def offset_wl_plot(df,fs=USH.fig_size_l,output=True,
+            savefig=False,legend=True,title=None):
+    x = df.iloc[:, 0]  # Assuming the first column is the x-axis data
+    fig=figure(figsize=fs)
+    # Iterate through the remaining columns (y-axis data) with a +1 offset
+    for i, column in enumerate(df.columns[1:-3], start=1):
+        y = df.iloc[:, i] - i +10 # Apply the +1 offset to y
+        plot(x, y, label=column)
+
+    xlabel('Wavelength [$\AA$]')  # Use the first column name as the x-axis label
+    ylabel("Flux")
+    if legend==True:
+        fig.legend(fontsize=10)
+    tight_layout()
+    show()
+
+
+
+def get_line_spec(df_av, line, w_range=0.6, vel_offset=0, vel=False, norm=False, cont_sub=False, full_norm=False,std_shift=None, save_text=False):
     '''
-    get subset of df_av for given  wavelength range around a line, 
-    convert to vel if vel==True, with zero at specified line
+    Get subset of df_av for given wavelength range around a line,
+    convert to velocity if vel==True, with zero at specified line.
 
     Parameters
     ----------
     df_av : data frame
-        average flux dataframe from get_ave_spec().
+        Average flux DataFrame from get_ave_spec().
     line : float
-        wavelength position of emission line to consider.
+        Wavelength position of emission line to consider.
     w_range : float, optional
-        wavelength range +/- around line to include. The default is 0.6.
+        Wavelength range +/- around line to include. The default is 0.6.
     vel : bool, optional
-        option to return velcity values in km/s around line. The default is False.
+        Option to return velocity values in km/s around line. The default is False.
+    save_text : bool, optional
+        Option to save the output as a text file. The default is False.
 
     Returns
     -------
     df_line_av : data frame
-        subset of df_av around line, either as is or with wave replaced with vel if vel==True.
-
+        Subset of df_av around line, either as is or with wave replaced with vel if vel==True.
     '''
-    df=df_av.copy()
+    df = df_av.copy()
 
-    
-    if vel==False:
-        rv_shift=(df['wave'].values * vel_offset) / clight #shift in the rest wl due to rv
-        df.wave=df.wave - rv_shift #comparison wl to compare to observed, accounting for rv shift
-        df_line_av=df[df['wave'].between(line-w_range,line+w_range)]
-        
+    if not vel:
+        rv_shift = (df['wave'].values * vel_offset) / clight  # Shift in the rest wavelength due to RV
+        df['wave'] = df['wave'] - rv_shift  # Comparison wavelength to compare to observed, accounting for RV shift
+        df_line_av = df[df['wave'].between(line - w_range, line + w_range)]
     else:
-        df_line_av=df[df['wave'].between(line-200,line+200)]
+        df_line_av = df[df['wave'].between(line - 200, line + 200)]
         if w_range < 10:
             w_range = 10
         
-        
-    #convert wavelength to velocity around given line
-    if vel==True:
-        df_vel=pd.Series(((df_line_av.wave - line)*clight/line)-vel_offset,name='vel')
-        df_line_av=pd.concat([df_vel,df_line_av],axis=1).drop('wave',axis=1)
-        #df_line_av=df_line_av[df_line_av['vel'].between(0-w_range,0+w_range)]
+    # Convert wavelength to velocity around given line
+    if vel:
+        df_vel = pd.Series(((df_line_av['wave'] - line) * clight / line) - vel_offset, name='vel')
+        df_line_av = pd.concat([df_vel, df_line_av], axis=1).drop('wave', axis=1)
+        df_line_av = df_line_av[df_line_av['vel'].between(0 - w_range, 0 + w_range)]
 
-        df_line_av1=df_line_av[df_line_av['vel'].between(0-w_range,0+w_range)]
-        df_line_av=df_line_av1
-        
-    if norm==True:
-        df_line_av=df_line_av.copy()    
-        df_line_av.iloc[:,1:len(df_line_av.columns)]=df_line_av.iloc[:,1:len(df_line_av.columns)].apply(lambda x: (x - median(x) ) / (x.max() - median(x)))
-    if cont_sub==True:
-        df_line_av=df_line_av.copy()    
-        df_line_av.iloc[:,1:len(df_line_av.columns)]=df_line_av.iloc[:,1:len(df_line_av.columns)].apply(lambda x: (x - median(x) +1 ))# / (x.max() - median(x)))
+    if norm:
+        df_line_av.iloc[:, 1:len(df_line_av.columns)] = df_line_av.iloc[:, 1:len(df_line_av.columns)].apply(lambda x: (x / median(x)))
 
+    if cont_sub:
+        df_line_av.iloc[:, 1:len(df_line_av.columns)] = df_line_av.iloc[:, 1:len(df_line_av.columns)].apply(lambda x: (x - median(x)))
+
+    if full_norm:
+        df_line_av.iloc[:, 1:len(df_line_av.columns)] = df_line_av.iloc[:, 1:len(df_line_av.columns)].apply(lambda x: (x - median(x)) / abs(x.max() - x.min()))
+
+    # Add standard deviation column
+    std_flux = df_line_av.iloc[:, 1:len(df_line_av.columns) - 3].std(axis=1, ddof=0).rename('std_flux')
+    if std_shift:
+        std_flux = std_flux + std_shift  # Shift the standard deviation by a specified amount
+    df_line_av.loc[:, 'std_flux'] = std_flux  # Use .loc to avoid SettingWithCopyWarning
+    
+
+    
+    # Save to text file if save_text is True
+    if save_text:
+        output_dir = 'output_text_files'
+        os.makedirs(output_dir, exist_ok=True)  # Create the directory if it doesn't exist
+        filename = os.path.join(output_dir, f"{USH.target}_{line}.txt")  # Construct the filename
         
+        # Determine x column based on vel flag
+        x_column = 'vel' if vel else 'wave'  # Use 'vel' if vel=True, else 'wave'
+        
+        # Prepare DataFrame for saving
+        df_to_save = df_line_av[[x_column, 'med_flux']].copy()  # Select only the required columns
+        df_to_save.rename(columns={x_column: 'x', 'med_flux': 'y'}, inplace=True)  # Rename columns for clarity
+        
+        # Save as ASCII text file
+        df_to_save.to_csv(filename, sep=',', header=True, index=False)
+
     return df_line_av
 
 
-def vel_plot(df_av_line,start_date='1900',end_date='2100',line=0,fs=USH.fig_size_s,output=True,plot_av=True,plot_sd=False,
-             savefig=False):
+
+def vel_plot(df_av_line,start_date='1900',end_date='2100',line=0,fs=USH.fig_size_s,subdir=timenow,output=True,plot_av=True,plot_sd=False,
+             savefig=False,legend=True):
     global target
     
     '''plotting function for spectra,
@@ -369,24 +451,30 @@ def vel_plot(df_av_line,start_date='1900',end_date='2100',line=0,fs=USH.fig_size
     fig=figure(figsize=fs)
     plot(df_av_line.vel,df_av_line.iloc[:,1:len(df_av_line.columns)-3],linewidth=2)
     if plot_av==True:
-        plot(df_av_line.vel,df_av_line.av_flux,'k',linewidth=1,label='mean')
+        #plot(df_av_line.vel,df_av_line.av_flux,'k',linewidth=1,label='mean')
         plot(df_av_line.vel,df_av_line.med_flux,'b',linewidth=1,label='median')
-        fig.legend(df_av_line.columns[1:-1], fontsize=10, numpoints=1)
+        #fig.legend(df_av_line.columns[1:-1], fontsize=10, numpoints=1)
     if plot_sd==True:    
-        plot(df_av_line.vel,df_av_line.std_flux/df_av_line.med_flux,color='green',alpha=0.5, linestyle='dashed',linewidth=2,label='sd')       
-        fill_between(df_av_line.vel,0,(df_av_line.std_flux),color='grey',alpha=0.5)
-        if plot_av==True:
-            fig.legend(np.append(df_av_line.columns[1:-1],['std_flux/med_flux','std_flux']), fontsize=10, numpoints=1)
-        else:
-            fig.legend(np.append(df_av_line.columns[1:-3],['std_flux/med_flux','std_flux']), fontsize=10, numpoints=1)
-    if plot_av==False and plot_sd==False:
-        i=1
-        fig.legend(df_av_line.columns[1:-3].values, fontsize=10, numpoints=1)#,bbox_to_anchor=(1.04,1))
+        #plot(df_av_line.vel,df_av_line.std_flux/df_av_line.med_flux,color='green',alpha=0.5, linestyle='dashed',linewidth=2,label='sd')       
+        plot(df_av_line.vel,df_av_line.std_flux,'k--',alpha=1,linewidth=2,label='sd')               
+        fill_between(df_av_line.vel,1,(df_av_line.std_flux),color='grey',alpha=0.5)
+        # if plot_av==True:
+        #     fig.legend(np.append(df_av_line.columns[1:-1],['std_flux/med_flux','std_flux']), fontsize=10, numpoints=1)
+        # else:
+        #     fig.legend(np.append(df_av_line.columns[1:-3],['std_flux/med_flux','std_flux']), fontsize=10, numpoints=1)
+    # if plot_av==False and plot_sd==False:
+    #     i=1
+    #     fig.legend(df_av_line.columns[1:-3].values, fontsize=10, numpoints=1)#,bbox_to_anchor=(1.04,1))
+    if legend==True:
+        fig.legend(df_av_line.columns[1:], fontsize=7)#, bbox_to_anchor=(.95, .9), borderaxespad=0.)    
+
     axvline(x=0,color='k',linewidth=0.5,linestyle='--')
-    title('Plot of line at %s Angstroms'%(line))
+             
+                 
+    title(r'%s, %s $\AA$' % (USH.target, line))
     ylabel('Flux')
     xlabel('v [km/s]')
-    tight_layout()
+    #tight_layout()
     print(USH.target)
     print(USH.instrument)
     
@@ -395,7 +483,7 @@ def vel_plot(df_av_line,start_date='1900',end_date='2100',line=0,fs=USH.fig_size
     else:
         close()
     if savefig==True:
-        dirname=os.path.join('vel_plots')
+        dirname=os.path.join('vel_plots',subdir)
         if not os.path.exists(dirname):
             os.makedirs(dirname)
         filename=os.path.join(dirname,USH.target)+'_'+USH.instrument+'_'+str(line)+'.png'
@@ -545,8 +633,8 @@ def get_RV(w0,df_av,st_wave,st_flux,st_rv,date='med_flux',w_min=5610,w_max=5710,
 
     '''
     print('now calculating radial velocity of target star using template spectra')
-    rvmin=-50-st_rv
-    rvmax=50-st_rv
+    rvmin=-100-st_rv
+    rvmax=100-st_rv
     drv=0.1 #steps of rad velo
     vt=st_rv #template radial velocity
     
@@ -554,9 +642,12 @@ def get_RV(w0,df_av,st_wave,st_flux,st_rv,date='med_flux',w_min=5610,w_max=5710,
     w0_rv=df_av_rv['wave'].values
     f0_data_rv=df_av_rv[date].values
     
+    if max(st_wave) < 1000:
+        st_wave=st_wave*10
+    
     resample_st=interp1d(st_wave,st_flux,fill_value='extrapolate')
     #f0_st_rv=resample_st(w0_rv)
-    w0_st=np.arange(w_min-200,w_max+200,0.1)
+    w0_st=np.arange(min(w0_rv)-200,max(w0_rv)+200,0.1)
     f0_st_rv=resample_st(w0_st)
     
     xcor,ycor=pyasl.crosscorrRV(w0_rv, f0_data_rv, w0_st, f0_st_rv, rvmin, rvmax, 
@@ -567,7 +658,8 @@ def get_RV(w0,df_av,st_wave,st_flux,st_rv,date='med_flux',w_min=5610,w_max=5710,
     
     if output == True:
         wl_plot(df_av_rv,plot_av=False,fs=USH.fig_size_n)
-        #plot(w0_st,f0_st_rv)
+        figure()
+        plot(w0_st,f0_st_rv,label='template')
         figure()
         plot(xcor+vt,ycor/max(ycor), ':', label='Temp')
 
@@ -691,7 +783,7 @@ def get_vsini(w0,df_av,st_wave,st_flux,st_rv,date='med_flux',w_min=5610,w_max=57
         y1=y1[filter1]/max(y1)
         
         #guassian fit of the xcorr
-        gfit=fit_gauss(x1,y1)
+        #gfit=fit_gauss(x1,y1)
         #y1=gfit.best_fit
         #width=gfit.best_values['g1_sigma']
         #width=gfit.values['g1_fwhm']
@@ -727,7 +819,7 @@ def get_vsini(w0,df_av,st_wave,st_flux,st_rv,date='med_flux',w_min=5610,w_max=57
 
     
     #guassian fit of the xcorr
-    gfit=fit_gauss(xcorf,ycorf)
+    #gfit=fit_gauss(xcorf,ycorf)
     #ycorf=gfit.best_fit
     #width=gfit.best_values['g1_sigma']
     #width=gfit.values['g1_fwhm']
@@ -763,7 +855,8 @@ def get_vsini(w0,df_av,st_wave,st_flux,st_rv,date='med_flux',w_min=5610,w_max=57
     return np.round(vsini,2),gfit
     
     
-def get_rv_vsini(df_av,st_wave,st_flux,st_rv,date='med_flux',vsini_max=50,w_min=5000,w_max=5500,output=True,rtn_err=False):
+def get_rv_vsini(df_av,st_wave,st_flux,st_rv,date='med_flux',vsini_max=50,w_min=5000,w_max=5500,
+                 output=True,rtn_err=False,adj_templ_res=None):
     '''
     
 
@@ -802,6 +895,7 @@ def get_rv_vsini(df_av,st_wave,st_flux,st_rv,date='med_flux',vsini_max=50,w_min=
     
     df_av_rv=df_av[df_av['wave'].between(w_min,w_max)] #range to take for RV
     w0_rv=df_av_rv['wave'].values
+    #f0_data_rv=subtract_cont(df_av_rv,av=date) 
     f0_data_rv=df_av_rv[date].values
     f0_data_rv=NormalizeData(f0_data_rv)
     
@@ -813,17 +907,25 @@ def get_rv_vsini(df_av,st_wave,st_flux,st_rv,date='med_flux',vsini_max=50,w_min=
     if max(st_wave) < 1000:
         st_wave=st_wave*10
     resample_st=interp1d(st_wave,st_flux,fill_value='extrapolate')
-    w0_st=np.arange(w_min-100,w_max+100,0.05) #larger range for template
+    w0_st=np.arange(w_min-100,w_max+100,0.01) #larger range for template
     f0_st_rv=resample_st(w0_st)
     f0_st_rv=NormalizeData(f0_st_rv)
-    
-    xcor,ycor=pyasl.crosscorrRV(w0_rv, f0_data_rv, w0_st, f0_st_rv, rvmin, rvmax, 
+
+    if adj_templ_res != None:
+        f0_st_rv=pyasl.instrBroadGaussFast(w0_st,f0_st_rv,resolution=adj_templ_res)
+        print('broadening template instrument resolution with effective res of R=',adj_templ_res)
+        
+        
+    xcor1,ycor1=pyasl.crosscorrRV(w0_rv, f0_data_rv, w0_st, f0_st_rv, rvmin, rvmax, 
                                 drv, mode='doppler', skipedge=70, edgeTapering=1.)
-    #guassian fit of the xcorr
+    ycor1=NormalizeData(ycor1)#/median(ycor)
+    xcor=xcor1[ycor1>0.5]
+    ycor=ycor1[ycor1>0.5]
+                     #guassian fit of the xcorr
     gfit=fit_gauss(xcor,ycor)
     g1_stderr=gfit.params['g1_center'].stderr
     ycor=gfit.best_fit
-    ycor=ycor/median(ycor)
+    #ycor=NormalizeData(ycor)#/median(ycor)
     t_width=gfit.best_values['g1_sigma']
     t_chi=gfit.redchi
     fol=(ycor==max(ycor))
@@ -832,6 +934,7 @@ def get_rv_vsini(df_av,st_wave,st_flux,st_rv,date='med_flux',vsini_max=50,w_min=
     t_widths=[t_width]
     t_chis=[t_chi]
     t_ycors=[ycor]
+    t_xcors=[xcor]
     g1_stderrs=[g1_stderr]
     
     if output == True:
@@ -840,8 +943,10 @@ def get_rv_vsini(df_av,st_wave,st_flux,st_rv,date='med_flux',vsini_max=50,w_min=
         plot(w0_rv,(f0_data_rv),label='target')
         plot(w0_st,(f0_st_rv),alpha=0.5,label='template')   
         legend(loc='upper left', fontsize=8, numpoints=1)
-        figure()
+        figure(figsize=USH.fig_size_s)
+        plot(xcor1+vt,(ycor1),'k-',linewidth=3)
         plot(xcor+vt,ycor)
+        tight_layout()
         #axvline(x=radvel,color='k',linewidth=0.5,linestyle='--')
         
     for i in range(1,6):
@@ -851,33 +956,59 @@ def get_rv_vsini(df_av,st_wave,st_flux,st_rv,date='med_flux',vsini_max=50,w_min=
         w0_rv=df_av_rv['wave'].values
         f0_data_rv=df_av_rv[date].values
         f0_data_rv=NormalizeData(f0_data_rv)
-        xcor,ycor=pyasl.crosscorrRV(w0_rv, f0_data_rv, w0_st, f0_st_rv, rvmin, rvmax, drv, mode='doppler', skipedge=70, edgeTapering=1.)
+        xcor1,ycor1=pyasl.crosscorrRV(w0_rv, f0_data_rv, w0_st, f0_st_rv, rvmin, rvmax, drv, mode='doppler', skipedge=70, edgeTapering=1.)
+        ycor1=NormalizeData(ycor1)#/median(ycor)
+        xcor=xcor1[ycor1>0.5]
+        ycor=ycor1[ycor1>0.5]
         gfit=fit_gauss(xcor,ycor)
         ycor=gfit.best_fit
-        ycor=ycor/median(ycor)
         t_width=gfit.best_values['g1_sigma']
         t_chi=gfit.redchi
-        fol=(ycor==max(ycor))
-        radvel_i=float(xcor[fol])+vt
-        rvs.append(radvel_i)
-        g1_stderrs.append(gfit.params['g1_center'].stderr)
-        t_widths.append(t_width)
-        t_chis.append(t_chi)
-        t_ycors.append(ycor)
-        if output == True:
-            plot(xcor+vt,ycor)
-            xlabel('Radial Velocity [km/s]')
-            ylabel('Normalised Xcor')
+        std_err=gfit.params['g1_center'].stderr
+        if std_err==None:
+            std_err=999
+        if std_err < 1:
+            fol=(ycor==max(ycor))
+            radvel_i=float(xcor[fol])+vt
+            rvs.append(radvel_i)
+            g1_stderrs.append(std_err)
+            t_widths.append(t_width)
+            t_chis.append(t_chi)
+            t_xcors.append(xcor)
+            t_ycors.append(ycor)
+            if output == True:
+                plot(xcor+vt,ycor)
+                xlabel('Radial Velocity [km/s]')
+                ylabel('Normalised Xcor')
+        else:
+            pass
             
     radvel=np.round(np.median(rvs),2)
     if output == True:
             axvline(x=radvel,color='k',linewidth=0.5,linestyle='--')
-            
+            #print(g1_stderrs)
+        
     print ('av rad vel = %.2f km/s, sd = %.2f, std err = %.2f' %(radvel,np.std(rvs),(np.std(rvs)/np.sqrt(len(rvs)))))
     #print ('rv cen mean std err= %.4f' %(np.mean(g1_stderr)))
     best_t_width=t_widths[argmin(t_chis)]
     best_t_ycors=t_ycors[argmin(t_chis)]
-    
+
+    # if output == True:
+    #     #wl_plot(df_av_rv,plot_av=False,fs=USH.fig_size_n)
+    #     figure(figsize=USH.fig_size_n)
+    #     rv_shift=(w0_rv * radvel) / clight #shift in the rest wl due to rv
+    #     w0_rv_shift=w0_rv - rv_shift 
+    #     plot(w0_rv_shift,(f0_data_rv),label='target')
+    #     plot(w0_st,(f0_st_rv),alpha=0.5,label='synth. template, XS resolution')   
+    #     legend(loc='upper left', fontsize=8, numpoints=1)
+    #     xlabel('wave AA')
+    #     ylabel('flux')
+    #     xlim(8708,8832)
+    #     ylim(0.2,1.25)
+    #     tight_layout()
+
+
+                     
     #now have the width of the xcor and values for the best fit, with lowest chisq
     
     print('now calculating vsini of target star using template spectra')
@@ -891,16 +1022,16 @@ def get_rv_vsini(df_av,st_wave,st_flux,st_rv,date='med_flux',vsini_max=50,w_min=
         ax[1].set(ylabel='Vsini (km/s)',xlabel='Xcorr width (km/s)')
     
     #Parameters for the xcor and broadening:
-    rvmin=-100
-    rvmax=100
-    drv=0.1 #steps of rad velo
-    epsilon=0 #0.6 #limb darkening for models, good for young stars, Dahm+12, Hartmann+86
+    rvmin=-50
+    rvmax=50
+    drv=0.5 #steps of rad velo
+    epsilon=0.6 #0.6 #limb darkening for models, good for young stars, Dahm+12, Hartmann+86
     vm=-100.
     vmm=100. #max and min vel for the fit.
    
     #Now do some broadened spectra:    
     kms_list=[2,3,5,7,9,12,15,20,25,30,35,50,100]
-    kms_list=np.arange(2,vsini_max,np.round((vsini_max-2)/10,0))
+    kms_list=np.arange(1,vsini_max,np.round((vsini_max-2)/10,0))
     
     '''create empty data frames for the values and col names'''
     broad_flux=pd.DataFrame({'wave': w0_st})
@@ -919,15 +1050,16 @@ def get_rv_vsini(df_av,st_wave,st_flux,st_rv,date='med_flux',vsini_max=50,w_min=
     y_xcor=pd.DataFrame()
     s_widths=[]
     for kms in broad_flux.columns[1:len(broad_flux.columns)]:
-        x1,y1=pyasl.crosscorrRV(w0_st, numpy.array(broad_flux.loc[:,kms]), w0_st, f0_st_rv, rvmin, rvmax, drv, mode='doppler', skipedge=200, edgeTapering=1.)
+        x1,y1=pyasl.crosscorrRV(w0_st, np.array(broad_flux.loc[:,kms]), w0_st, f0_st_rv, rvmin, rvmax, drv, mode='doppler', skipedge=200, edgeTapering=1.)
         filter1=(x1>vm) & (x1<vmm)
         x1=x1[filter1]
-        y1=y1[filter1]/median(y1) 
-        #y1=
+        #y1=y1[filter1]/median(y1) 
         #guassian fit of the xcorr
+        y1=NormalizeData(y1)
+        x1=x1[y1>0.3]
+        y1=y1[y1>0.3]
         gfit=fit_gauss(x1,y1)
         y1=gfit.best_fit
-        y1=NormalizeData(y1)
         s_width=gfit.best_values['g1_sigma']
         
         if output == True:
@@ -962,30 +1094,36 @@ def get_rv_vsini(df_av,st_wave,st_flux,st_rv,date='med_flux',vsini_max=50,w_min=
         
         #ax[0].plot(xcor+vt-radvel,NormalizeData(best_t_ycors),'b--', linewidth=3, label='b target star')
         #ax[0].plot((xcorf+st_rv)-radvel,ycorf,'k--', linewidth=3, label='target star')
-        for i in t_ycors:
-            ax[0].plot(xcor+vt-radvel,NormalizeData(i),'b--', linewidth=1)
+        for i in range(len(t_ycors)):
+            ax[0].plot(t_xcors[i]+vt-radvel,(t_ycors[i]+1-max(t_ycors[i])),'b--', linewidth=1)
         ax[0].legend(fontsize=8)
-    
+        ax[0].set_xlim(-50,50)
     #print('best width = %.2f' %(best_t_width))  
     print('av width = %.2f , sd = %.2f' %(width,width_err))  
     print('av vsini = %.2f km/s , sd = %.2f, std err = %.2f' %(vsini,np.std(av_vsini),(np.std(av_vsini)/np.sqrt(len(av_vsini)))))
-    
+    print('min vsini = %.2f km/s' %(min(av_vsini)))
+
+    vsini=min(av_vsini)               
+                 
     if vsini<2:
         print('ERROR with vsini calculation, value %.2f < template vel.'%(vsini))
         print('Try a different wavelength range, different instrument, or different template')
-        print('Setting vsini to 5 km/s')
-        vsini=5.0
-        
+        print('Setting vsini to 2 km/s')
+        vsini=2
+
     USH.radvel=radvel
     USH.vsini=vsini
     
     if rtn_err==True:
         return radvel, (np.std(rvs)/np.sqrt(len(rvs))), vsini,(np.std(av_vsini)/np.sqrt(len(av_vsini)))
+        #return radvel, (np.std(rvs)/np.sqrt(len(rvs))), vsini,(np.std(av_vsini)/np.sqrt(len(av_vsini)))
     else:
         return radvel,vsini#,gfit
     
 
-def subtract_cont(df_av,av='med',poly=3,wl_win=0.5,coeff=31,output=False,return_cont=False,plot_x=[],plot_y=[]):
+def subtract_cont(df_av,av='med',poly=1,wl_win=1,coeff=31,
+                  sigma_low=2.5,sigma_up=3,
+                  output=False,return_cont=False,return_norm=False,plot_x=[],plot_y=[]):
     '''
     For a given flux and wavelength, apply sigma clipping, undersampling and
     savgol-golay filter to approximately remove the continuum.
@@ -1024,21 +1162,25 @@ def subtract_cont(df_av,av='med',poly=3,wl_win=0.5,coeff=31,output=False,return_
     if av=='med':
         f0_data=df_av.med_flux
     else:
-        f0_data=df_av.av_flux
-    
+        f0_data=df_av[av]
+    #print('cont sub. for ',av)
     if plot_y==[]:
         plot_y=[min(f0_data),max(f0_data)]
+
+    '''smooth data before sigma clipping'''
+    f0_data1=pyasl.smooth(f0_data,5)
     
    
     '''clip the data then resample back to original w0'''
-    f0_mask=sigma_clip(f0_data,sigma_lower=2.5,sigma_upper=5)
+    f0_mask=sigma_clip(f0_data1,sigma_lower=sigma_low,sigma_upper=sigma_up)
     w0_clip=w0[~f0_mask.mask]
-    f0_clip=f0_data[~f0_mask.mask]
+    f0_clip=f0_data1[~f0_mask.mask]
     clip_resample=interp1d(w0_clip,f0_clip,fill_value='extrapolate')
     f0_sc=clip_resample(w0)
     
     '''undersample the data to get rough continuum'''
-    w_smooth=np.arange(min(w0),max(w0),wl_win) #set a larger step interval to undersample input data
+    edgeskip=2
+    w_smooth=np.arange(min(w0)+edgeskip,max(w0)-edgeskip,wl_win) #set a larger step interval to undersample input data
     smooth=interp1d(w0,f0_sc,fill_value='extrapolate')
     f_smooth=smooth(w_smooth)
     #print('smooth std:',np.std(f_smooth))
@@ -1046,21 +1188,24 @@ def subtract_cont(df_av,av='med',poly=3,wl_win=0.5,coeff=31,output=False,return_
     '''apply Savitzky-Golay filter to get continuum
         expand values back out to original wavelength intervals
         subtract continuum from raw flux values'''
+    if len(w_smooth) < coeff:
+        coeff=len(w_smooth)
     f_sf=savgol_filter(f_smooth,coeff,poly)
     expand=interp1d(w_smooth,f_sf,fill_value='extrapolate')
     f_sf_full=expand(w0)
     f_flat=f0_data-f_sf_full
-    print('savgol std:',np.std(f_sf_full))
+    #print('savgol std:',np.std(f_sf_full))
+    f_norm=(f0_data/f_sf_full) 
     
     if output == True:
         #ioff()
         figure(figsize=USH.fig_size_l)
         cla()
         plot(w0,f0_data,linewidth=0.75,label='Input Average Flux')
-        #plot(w0,f0_sc,label='sigma clipped')
+        plot(w0,f0_sc,label='sigma clipped')
         plot(w_smooth,f_smooth,linewidth=0.75,label='Undersampled')
-        plot(w_smooth,f_sf,linewidth=1,label='S-G Flter, order=%s'%(poly))
-        plot(w0,f_flat,linewidth=0.75,label='Continuum Subtracted')
+        plot(w0,f_sf_full,linewidth=1,label='S-G Flter, order=%s'%(poly))
+        plot(w0,f_flat+min(f0_data),linewidth=0.75,label='Continuum Subtracted')       
         ylabel('Flux')
         xlabel('Wavelength [Angstroms]')
         xlim(plot_x)
@@ -1071,94 +1216,364 @@ def subtract_cont(df_av,av='med',poly=3,wl_win=0.5,coeff=31,output=False,return_
         tight_layout()
         show()
         #ion()
+        if return_norm==True:        
+            figure(figsize=USH.fig_size_n)
+            plot(w0,f_norm,linewidth=0.75,label='Continuum Normailised') 
+            axhline(y=1, color='grey', linestyle='--',alpha=0.5)
+            legend(loc='upper left', fontsize=8, numpoints=1)
+            ylabel('Normalized Flux')
+            xlabel('Wavelength [Angstroms]')
         
     if return_cont==True:
         return f_flat,f_sf_full
+    elif return_norm==True:
+        return f_norm
     else:
         return f_flat
 
-def subtract_templ(df_line_target,obs,df_line_templ,rv_shift=0,vsini=0,r=0,factor=1,shift=0,
-                   fs=USH.fig_size_l,plot_subtracted=True,plot_divided=False):
-    #target spectrum normalised to 0 continuum
-    w0_target=df_line_target.wave.values
-    #f0_target=NormalizeDataMedian(df_line_target[obs]).values
-    f0_target=NormalizeData(df_line_target[obs]).values
+def subtract_templ(df_line_target,obs_target,target_inst,df_line_templ,obs_templ,templ_inst,
+                   rv_shift=0,rv_templ=None,vsini=0,r=0,shift=0,mask_pm=[None,2],
+                   fs=USH.fig_size_l,plot_x=[],plot_subtracted=True,plot_divided=False,
+                   return_params=False,auto_r=False,auto_vsini=False,chi_output=False,
+                  output=False, savefig=False,savefits=False,localdirsave=True):
 
+                       
+    #target spectrum normalised to 0 continuum
+    w0_target_o=df_line_target.wave.values
+    #f0_target=NormalizeDataMedian(df_line_target[obs_target]).values
+    #f0_target=NormalizeData(df_line_target[obs_target]).values
+    f0_target=subtract_cont(df_line_target,av=obs_target,sigma_low=1.5,return_norm=True)                 
+    median_w0 = np.median(w0_target_o)  #take median w0 before rv shifting
+
+    if rv_templ != None:
+        rv_target_shift=(w0_target_o * rv_shift) / clight #shift in the rest wl due to rv
+        w0_target_o=w0_target_o - rv_target_shift     
+        radvel_diff=-rv_templ
+    else:
+        radvel_diff=rv_shift
+        print('returning non-RV-corrected removal...')
+                      
+    #resample to more discrete grid
+    w0_target=np.arange(np.round(min(w0_target_o),2),np.round(max(w0_target_o),2),0.01)
+    expand=interp1d(w0_target_o,f0_target,fill_value=median(f0_target),bounds_error=False)#fill_value='extrapolate')fill_value='extrapolate')
+    f0_target=expand(w0_target)
+                      
     #template spectrum normalised to 0 continuum
     w0_templ=df_line_templ.wave.values
     #f0_templ=NormalizeDataMedian(df_line_templ.med_flux).values
-    f0_templ=NormalizeData(df_line_templ.med_flux).values
-        
-    #rv shift template spectrum
-    rvmin=-40.
-    rvmax=40.
-    drv=0.1
-    xcor,ycor=pyasl.crosscorrRV(w0_target, f0_target, w0_templ, f0_templ, rvmin, rvmax, 
-                                drv, mode='doppler', skipedge=100)
-    fol=(ycor==max(ycor))
-    radvel_diff=float(xcor[fol])
-    
-    rv_corr=w0_templ * (radvel_diff + rv_shift) / clight
-    w0_templ=w0_templ+rv_corr
-    
-    #rescale to lowest res bins
-    if len(df_line_target.wave.values) < len(df_line_templ.wave.values):
-        expand=interp1d(w0_templ,f0_templ,fill_value='extrapolate')
-        f0_templ=expand(w0_target)
-        w0_templ=w0_target
-    else:# len(df_line_target.wave.values) > len(df_line_templ.wave.values):
-        expand=interp1d(w0_target,f0_target,fill_value='extrapolate')
-        f0_target=expand(w0_templ)
-        w0_target=w0_templ
+    #f0_templ=NormalizeData(df_line_templ[obs_templ]).values
+    f0_templ=subtract_cont(df_line_templ,av=obs_templ,sigma_low=1.5,return_norm=True)                 
+
+    if templ_inst=='PHOENIX':      
+        f0_templ=df_line_templ[obs_templ].values+1
 
     
-    #vsini broaden template
-    f0_templ=pyasl.rotBroad(w0_templ, f0_templ,epsilon=0, vsini=vsini)
-       
-    #veiling
-    f0_templ=(f0_templ + r ) / (1 + r)
-    
-    #manual scaling factor and set continuum to 1
-    f0_templ=(f0_templ*factor)-median(f0_templ*factor)+1
-    f0_target=f0_target - median (f0_target)+1
+    rv_corr=w0_templ * (radvel_diff) / clight
+    w0_templ=w0_templ+rv_corr
+    expand=interp1d(w0_templ,f0_templ,fill_value=median(f0_templ),bounds_error=False)#fill_value='extrapolate')
+    f0_templ=expand(w0_target)
+    w0_templ=w0_target
+
+    ### instead now instrument broaden, wavelength array already equal
+    #rescale to lowest res bins
+    # if len(df_line_target.wave.values) < len(df_line_templ.wave.values):
+    #     expand=interp1d(w0_templ,f0_templ,fill_value=median(f0_templ),bounds_error=False)#fill_value='extrapolate')
+    #     f0_templ=expand(w0_target)
+    #     w0_templ=w0_target
+    # else:# len(df_line_target.wave.values) > len(df_line_templ.wave.values):
+    #     expand=interp1d(w0_target,f0_target,fill_value=median(f0_target),bounds_error=False)#fill_value='extrapolate')fill_value='extrapolate')
+    #     f0_target=expand(w0_templ)
+    #     w0_target=w0_templ
+
+    if target_inst != templ_inst:
+        print ('different instruments for target and template:', target_inst,USH.inst_res[target_inst],templ_inst,USH.inst_res[templ_inst])
+        if USH.inst_res[target_inst] < USH.inst_res[templ_inst]:
+            e_res=effective_res(USH.inst_res[templ_inst],USH.inst_res[target_inst])
+            f0_templ=pyasl.instrBroadGaussFast(w0_templ,f0_templ,edgeHandling='firstlast',resolution=e_res)
+            print('broadening TEMPLATE instrument with effective resolution of R=',e_res)
+        else:
+            e_res=effective_res(USH.inst_res[target_inst],USH.inst_res[templ_inst])
+            f0_target=pyasl.instrBroadGaussFast(w0_target,f0_target,edgeHandling='firstlast',resolution=e_res)
+            print('broadening TARGET instrument with effective resolution of R=',e_res)            
+    else:
+        print('target and template instrument: ',target_inst,USH.inst_res[target_inst] )
+            
+    #vsini broaden template initial guess
+    if auto_vsini==False:
+        f0_templ=pyasl.rotBroad(w0_templ, f0_templ,epsilon=0.6, vsini=vsini)
+    if auto_r==False:
+        f0_templ=(f0_templ + r ) / (1 + r)
+
+    #manual continuum adjustment
     f0_templ=f0_templ+shift
+
     
     
+    if mask_pm[0]==None:
+        mask_centre=np.median(w0_target)
+    else:
+        mask_centre=mask_pm[0]
+    tolerance = mask_pm[1]
+    line_mask = (w0_target < mask_centre - tolerance) | (w0_target > mask_centre + tolerance)
+    #(w0_target < builtins.max(w0_target)-1) | (w0_target > builtins.min(w0_target)+1) 
+    filtered_f0_target = f0_target[line_mask]
+
+                       
+    if auto_r==True and auto_vsini==False:
+        print('optimising  r ...')
+        r_list = np.arange(-0.5, 2.5, 0.1)
+        chisq_list_r=[]
+        std_list_r=[]
+        best_chisq = float('inf') 
+        best_r=None
+        for r_check in r_list:
+            f0_templ_check=(f0_templ + r_check ) / (1 + r_check)
+            f0_subtracted_check=f0_target-f0_templ_check
+            chisq=np.sum(((f0_subtracted_check[line_mask])/(f0_target[line_mask])**2 )**2)
+            chisq_list_r.append(chisq)
+            std_r=np.std(f0_subtracted_check[line_mask])
+            std_list_r.append(std_r)
+            if chisq < best_chisq:
+                best_chisq = chisq
+                best_r = r_check
+        #best_r=r_list[argmin(chisq_list_r)]
+        r=np.round(best_r,2)
+        print('best r=',r)
+        f0_templ=(f0_templ + r ) / (1 + r)
+        if chi_output==True:
+            ioff()
+            fig1=figure()
+            cla()
+            plot(r_list,NormalizeData(chisq_list_r),'.',label='chisq')
+            plot(r_list,NormalizeData(std_list_r),'k.',label='std')
+            yscale('log')
+            xlabel('r')
+            legend()
+            show()
+        
+
+    if auto_vsini == True and auto_r==False:
+        print('optimising  vsini ...')
+        vsini_step = 0.5
+        vsini_list = np.arange( (builtins.max(vsini - 10, 0.01)), vsini + 5, vsini_step)  # Adjust the range and step size
+        chisq_list_v = []
+        std_list_v=[]
+        for vsini_check in vsini_list:
+            f0_templ_check = pyasl.rotBroad(w0_templ, f0_templ,epsilon=0.6, vsini=vsini_check)
+            f0_subtracted_check = f0_target - f0_templ_check
+            chisq = np.sum(((f0_subtracted_check[line_mask]) / (f0_target[line_mask])**2 ) ** 2)
+            chisq_list_v.append(chisq)
+            std_v=np.std(f0_subtracted_check[line_mask])
+            std_list_v.append(std_v)
+        best_vsini = vsini_list[np.argmin(chisq_list_v)]
+        vsini = np.round(best_vsini,2)  # Update 'vsini' with the best value
+        print('best vsini=',vsini)
+        #print(chisq_list_v)
+        f0_templ=pyasl.rotBroad(w0_templ, f0_templ,epsilon=0.6, vsini=vsini)
+        if chi_output==True:
+            ioff()
+            fig1=figure()
+            cla()
+            plot(vsini_list,NormalizeData(chisq_list_v),'.',label='chisq')
+            plot(vsini_list,NormalizeData(std_list_v),'k.',label='std')
+            yscale('log')
+            xlabel('vsini')
+            legend()
+            show()
+
+                      
+    if auto_r==True and auto_vsini==True:
+        print('optimising both r and vsini...')
+        vsini_step = 1
+        vsini_list = np.arange(builtins.max(vsini - 10, 0.01), vsini + 5, vsini_step)  # Adjust the range and step size
+        r_list = np.arange(-0.5, 2.5, 0.1)
+        best_chisq = float('inf')  # Initialize best_chisq with a large value
+        best_vsini = None
+        best_r = None
+        chisq_values = np.zeros((len(vsini_list), len(r_list)))
+        eucd_values = np.zeros((len(vsini_list), len(r_list)))
+        # Loop over vsini_list
+        for i, vsini_check in enumerate(vsini_list):
+            # Calculate f0_templ_check_v
+            f0_templ_check_v = pyasl.rotBroad(w0_templ, f0_templ, epsilon=0.6, vsini=vsini_check)
+            # Loop over r_list
+            for j, r_check in enumerate(r_list):
+                # Calculate f0_templ_check
+                f0_templ_check = (f0_templ_check_v + r_check) / (1 + r_check)
+                # Calculate chisq
+                f0_subtracted_check = f0_target - f0_templ_check
+                chisq = np.sum(((f0_subtracted_check[line_mask]) / (f0_target[line_mask])**2 ) ** 2)
+                euc_dist = np.linalg.norm(f0_target[line_mask] - f0_templ_check[line_mask])
+                # Store chisq value in the 2D array
+                chisq_values[i, j] = chisq
+                eucd_values[i, j] = euc_dist
+                if chisq < best_chisq:
+                    best_chisq = chisq
+                    best_vsini = vsini_check
+                    best_r = r_check
+        
+        vsini = np.round(best_vsini, 2)
+        r = np.round(best_r, 2)
+
+        #print('best chisq=',best_chisq)
+        print('Best vsini =', vsini)
+        print('Best r =', r)
+        f0_templ=pyasl.rotBroad(w0_templ, f0_templ,epsilon=0.6, vsini=vsini)
+        f0_templ=(f0_templ + r ) / (1 + r)
+
+        if chi_output==True:
+            
+            chisq_values = NormalizeData(chisq_values)
+            eucd_values = NormalizeData(eucd_values)
+
+            
+            fig, axes = subplots(1, 1, figsize=(5, 4),sharey=True)
+            
+            # Plot for chisq
+            im0 = axes.imshow(chisq_values, cmap='cubehelix_r', extent=[min(r_list), max(r_list), min(vsini_list), max(vsini_list)],
+                                 norm=matplotlib.colors.LogNorm(), 
+                              aspect='auto', origin='lower')
+            axes.plot(best_r, best_vsini, marker='x', color='red')
+            axes.set_xlabel('r')
+            axes.set_ylabel('vsini [km/s]')
+            axes.grid(False)
+            colorbar(im0, ax=axes, label='Eff. Chisq')
+            
+            # # Plot for euc.d
+            # im0 = axes[1].imshow(eucd_values, cmap='cubehelix_r', extent=[min(r_list), max(r_list), min(vsini_list), max(vsini_list)],
+            #                      norm=matplotlib.colors.LogNorm(), aspect='auto', origin='lower')
+            # axes[1].set_xlabel('r')
+            # axes[1].set_ylabel('vsini [km/s]')
+            # axes[1].grid(False)
+            # colorbar(im0, ax=axes[1], label='Euc.D')            
+            
+            # Adjust layout
+            tight_layout()
+            
+            # Show plot
+            show()
+        
+                       
     f0_subtracted=f0_target-f0_templ
     f0_divided=f0_target/f0_templ
-    
+
+                       
     #chisq=chisquare(f0_templ,f0_target)
-    chisq=np.sum(((f0_target-f0_templ)/f0_target)**2)
+    chisq=np.sum(( (f0_subtracted[line_mask])/(f0_target[line_mask])**2 )**2)#/len(f0_target[line_mask])
     print('chi sq = ',np.round(chisq,3))
+                       
+    std=np.std(f0_subtracted[line_mask])
+    #print('std = ',np.round(std,3))
+                       
+    euc_dist = np.linalg.norm(f0_target[line_mask] - f0_templ[line_mask])
+    #print('euclidean_distance = ',np.round(euc_dist,3))
+
+
+    if plot_x==[]:
+        plot_x=[min(w0_target),max(w0_target)]                   
     
-    figure(figsize=fs)
-    cla()
-    plot(w0_target,(f0_target),'k-',lw=2,label='Target')
-    plot(w0_templ,(f0_templ),color='darkorange',ls='--',lw=2,label='Class III Template')
-    if plot_subtracted==True:
-        plot(w0_target,f0_subtracted+1, 'b',lw=3,label='Residual')
-    if plot_divided==True:
-        plot(w0_target,f0_divided,label='divided',linewidth=3)        
-    ylabel('Flux')
-    xlabel('Wavelength [$\AA$]')
-    legend(ncol=2,loc='upper center')
-    tight_layout()
-    #xlim(mean(w0_target)-5,mean(w0_target)+5)
-    show()
+    ioff()
+    if output == True or savefig == True:                   
+        fig=figure(figsize=fs)
+        cla()
+        plot(w0_target,(f0_target),'k-',lw=3,label='Target')
+        plot(w0_templ,(f0_templ),color='darkorange',ls='--',lw=2,label='Template')
+        axvline(x=mask_centre - tolerance, color='grey', linestyle='--',alpha=0.5)
+        axvline(x=mask_centre + tolerance, color='grey', linestyle='--',alpha=0.5)
+                           
+        if plot_subtracted==True:
+            plot(w0_target,f0_subtracted+1, 'b',lw=2,label='Residual +1')
+        if plot_divided==True:
+            plot(w0_target,f0_divided,label='divided',linewidth=3)    
+        suptitle(f'chi sq ={np.round(chisq,3)},std ={np.round(std,3)},euc.d.={np.round(euc_dist,3)}',fontsize=10)
+        ylabel('Flux')
+        xlabel('Wavelength [$\AA$]')
+        legend(ncol=2)#,loc='upper center')
+        tight_layout()
+        #xlim(mean(w0_target)-5,mean(w0_target)+5)
+        xlim(plot_x)
+                       
+    if output==True:
+        show()
+    if localdirsave==True:
+        dirname=os.path.join('phot_rm_plots',timenow)
+    else: 
+        dirname=os.path.join('/Users/jcampbel/Library/CloudStorage/OneDrive-ESO/PEN_SM_phot_rm_backup_files/phot_rm_plots',timenow)
     
+    filename=os.path.join(dirname,USH.target)+'_'+obs_target+'_'+target_inst+'_'+str(int(median(w0_target)))+'_'+obs_templ.replace('/', '')+'.png'
+    if savefig==True:
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
+        fig.savefig(filename)
+        print('saving figure: ',filename)
+        if output == False:
+            close()
+    ion()
     #xlim(6295,6305)
     #ylim(0.3,1.5)
 
-    print(radvel_diff)
+    #print(radvel_diff)
     
     #w0_target=w0_target-rv_corr
 
-    return w0_target,f0_subtracted+1
+    df_av_sub=pd.DataFrame({'wave': w0_target,'target':f0_target,'template':f0_templ,'residual':f0_subtracted+1,'av_flux':f0_subtracted+1,'med_flux':f0_subtracted+1,'std_flux':f0_subtracted+1})
+    df_av_sub_res=pd.DataFrame({'wave': w0_target,'residual':f0_subtracted+1,'av_flux':f0_subtracted+1,'med_flux':f0_subtracted+1,'std_flux':f0_subtracted+1})
+
+    
+    q=str(re.sub('\ ','_',USH.target))
+    w=str(obs_target)
+    e=str(int(median_w0))
+    rel=str(re.sub('\ ','_',obs_templ))
+    inst=target_inst
+    nameout=q+'_'+e+'_'+inst+'_'+w+'_'+rel+'.fits'
+    if localdirsave==True:
+        fits_dirname=os.path.join('phot_rm_fits',timenow)
+    else:
+        fits_dirname=os.path.join('/Users/jcampbel/Library/CloudStorage/OneDrive-ESO/PEN_SM_phot_rm_backup_files/phot_rm_fits',timenow)
+    
+    outname=os.path.join(fits_dirname,nameout)
+    if savefits==True:
+        y=[df_av_sub.wave,df_av_sub.residual,df_av_sub.template,df_av_sub.target]
+        out_file=fits.PrimaryHDU(y)
+        hdu=fits.HDUList(out_file)
+        if not os.path.exists(fits_dirname):
+            os.makedirs(fits_dirname)
+        hdu.writeto(outname,overwrite=True)
+        
+        with fits.open(outname, mode='update') as hdul:
+            hd = hdul[0].header
+            hd['OBJECT']=(USH.target,'name of source')
+            hd['DATE-OBS']=(obs_target, 'UTC at end-of-read of first frame')
+            hd['MJD-OBS'] = (float(obs_target), 'Modified Julian Date')
+            hd['INSTRUME'] = (target_inst+'_SM', 'Instrument')
+            hd['CRVAL1'] = (min(w0_target), 'Initial lambda')
+            hd['CDELT1'] = (np.round((max(w0_target)-min(w0_target))/len(w0_target),2), 'Delta lambda')
+            if rv_templ != None:
+                hd['SPECSYS']=('STELLOCENTRIC', 'Stellar RV and BARYCENTRIC corrected')
+                hd['TEMPLRV']=(rv_templ, 'Template RV, km/s')
+                hd['RV']=(rv_shift, 'Target RV, km/s')
+            else:
+                hd['SPECSYS']=('BARYCENTRIC', 'BARYCENTRIC corrected')
+            hd['filedate']=timenow
+            hd['filename']=outname
+            hd['comment'] = ('format of file: 0:wave, 1:photosphere subtracted, ')
+            hd['comment'] = ('2:template broadened and veiled, 3:original target spectrum')
+        print('saving .fits file: ',nameout)
+        
+    if return_params==True:
+        params=pd.Series({'target':USH.target,'line':int(median_w0),'obs_target':obs_target,'target_inst':target_inst,
+                         'templ_spt':obs_templ.split('_-_')[0],'obs_template':obs_templ,'template_inst':templ_inst,
+                          'rv_target':rv_shift,'rv_templ':rv_templ,'vsini_eff':vsini,'r': r,'shift': shift,
+                         'chisq':chisq,'std':std,'euc_dist':euc_dist,
+                         'plot_fname':filename,'fits_fname':outname})
+        return df_av_sub,params
+    else:
+        return df_av_sub_res
 
 
 
 def find_em_lines(df_av,f_flat,radvel,vsini,sigma=2.5,av='med',atol=0.5,wl_win=1,
-                  output=False,line_id=False,prev_lines_only=False,xrange=[],xlim_min='min',xlim_max='max'):
+                  output=False,output_norm=False,line_id=False,prev_lines_only=False,xrange=[],yrange=[],xlim_min='min',xlim_max='max',thresh=0):
     '''
     function to find EM lines for flat spectra
     req. database of lines to compare with 'obs_wl_air' as the wavelength col
@@ -1205,11 +1620,11 @@ def find_em_lines(df_av,f_flat,radvel,vsini,sigma=2.5,av='med',atol=0.5,wl_win=1
         f0_data=df_av.av_flux
         
     '''undersample the data to get rough continuum'''
-    w0=np.arange(min(w0_ini),max(w0_ini),wl_win) #set a larger step interval to undersample input data
-    smooth=interp1d(w0_ini,f_flat,fill_value='extrapolate')
-    smooth2=interp1d(w0_ini,f0_data,fill_value='extrapolate')
-    f_flat=smooth(w0)
-    f0_data=smooth2(w0)
+    #w0=np.arange(min(w0_ini),max(w0_ini),wl_win) #set a larger step interval to undersample input data
+    #smooth=interp1d(w0_ini,f_flat,fill_value='extrapolate')
+    #smooth2=interp1d(w0_ini,f0_data,fill_value='extrapolate')
+    #f_flat=smooth(w0)
+    #f0_data=smooth2(w0)
     #print('smooth std:',np.std(f_smooth))
     
     if xrange==[]:
@@ -1219,24 +1634,90 @@ def find_em_lines(df_av,f_flat,radvel,vsini,sigma=2.5,av='med',atol=0.5,wl_win=1
         xlim_min=xrange[0]
         xlim_max=xrange[1]
     
-    f_flat_clip=sigma_clip(f_flat,sigma_lower=20,sigma_upper=0.9*sigma)
-    #f_flat_clip=sigma_clip(f_flat,sigma_lower=1,sigma_upper=0.9*sigma)
+    if yrange==[]:
+        ylim_min=min(f0_data)
+        ylim_max=max(f0_data)
+    else:
+        ylim_min=yrange[0]
+        ylim_max=yrange[1]
 
     
-    w0_flat_clip=w0[f_flat_clip.mask]#take the corresponding wavelength values from the mask creating the clip
-    a=np.array(f_flat[f_flat_clip.mask])#take just the clipped flux values from flat spectra
-    a_f0=np.array(f0_data[f_flat_clip.mask])#clipped flux values from input data
+    
+    ### -----------------------------------------------------------------------------
+    ### ---------------------------------- KSV --------------------------------------
+    ### -----------------------------------------------------------------------------
+    
+    # smoothing the data & oversampling data
+    
+    #print(min(w0_ini),max(w0_ini)," size:",shape(w0_ini))
+    size=(shape(w0_ini))
+    size=size[0]
+    step=(max(w0_ini)-min(w0_ini))/size
+    #print("step: ",step)
+    
+    #  set a larger step interval to undersample input data
+    w0_u=np.arange(min(w0_ini),max(w0_ini),wl_win)
+    smooth=interp1d(w0_ini,f_flat,fill_value='extrapolate')
+    smooth2=interp1d(w0_ini,f0_data,fill_value='extrapolate')
+    f_flat=smooth(w0_u)
+    f0_data=smooth2(w0_u)
+    # oversample it to achieve smooth + similar original resolution
+    w0=np.arange(min(w0_ini),max(w0_ini),0.009)#set a smaller step interval to undersample input data 
+    smooth=interp1d(w0_u,f_flat,fill_value='extrapolate')
+    smooth2=interp1d(w0_u,f0_data,fill_value='extrapolate')
+    f_flat=smooth(w0)
+    f0_data=smooth2(w0)
 
-        
+
+    # detection methods
+    
+    a = f_flat
+
     em1=np.r_[True, a[1:] > a[:-1]] & np.r_[a[:-1] > a[1:], True] #find max points from nn 1d
-    em2=argrelextrema(a, np.greater,order=1)[0] #find max points using argrelextrema signal filter
+    def local_maxima(x):
+        return np.r_[True, a[1:] > a[:-1]] & np.r_[a[:-1] > a[1:], True]
+    a_series = pd.Series(a)
+    em2 = local_maxima(np.where(a_series.mask, np.nan, a))
+    em2 = em2 & ~np.isnan(a)  # Ensure NaN values are not maxima
+    em3=argrelextrema(a, np.greater,order=1)[0] #find max points using argrelextrema signal filter
     
-    w0_em=np.array(w0_flat_clip[em2]) #take index values of max points to get w0 of em lines
-    f0_em=a[em2]#flux value from flat spectra
-    f0_data_em=a_f0[em2]#flux values from input spectra
+    from scipy.signal import find_peaks
+    pw = 0.1
+    peaks, properties = find_peaks(f_flat, width=pw)
+    em4 = peaks
+    em4
+
+    #print("em2:", shape(em2))
+    #print("em4:", shape(em4))
     
+    w0_em=np.array(w0[em2])
+    f0_em=a[em2]#flux value from flat spectra  
+    f0_data_em=f0_data[em2]
     
+    # sigma clipping all spectra
+    f_flat_clip=sigma_clip(f_flat,sigma_lower=10,sigma_upper=1.2*sigma) # KSV
+
+
+    w0_flat_clip=w0[f_flat_clip.mask] #take the corresponding wavelength values from the mask creating the clip
+    #print(min(w0_ini),max(w0_ini)," size:",shape(w0_flat_clip))
+    size=(shape(w0_flat_clip))
+    size=size[0]
+    step=(max(w0_ini)-min(w0_ini))/size
+    #print("step: ",step)   
+    a=np.array(f_flat[f_flat_clip.mask])#take just the clipped flux values from flat spectra
+    a_f0=np.array(f0_data[f_flat_clip.mask])#clipped flux values from input data  
     
+    # sigma clipping just the found emission lines separately so that indexes match
+    f_flat_clip_em=sigma_clip(f0_em,sigma_lower=10,sigma_upper=0.8*sigma)
+    
+    w0_em = w0_em[f_flat_clip_em.mask]
+    f0_em = f0_em[f_flat_clip_em.mask]
+    f0_data_em = f0_data_em[f_flat_clip_em.mask]
+
+    ### ---------------------------------------------------------------------------------------------------------------------
+    ###----------------------------------------------------------------------------------------------------------------------
+
+
     ''' list of lines''' 
     
     if prev_lines_only==True:
@@ -1317,17 +1798,26 @@ def find_em_lines(df_av,f_flat,radvel,vsini,sigma=2.5,av='med',atol=0.5,wl_win=1
     common_Ek=check_Ek[check_Ek[:,1]>1][:,0]
     em_match_common_Ek=em_matches[em_matches.Ek.isin(common_Ek)]
     
-        
-    if output == True:
+    # if y==[]
+    # ylim_min_norm = min(f0_em)
+    # ylim_max_norm = max(f0_em)
+    # else:
+    #     ylim_min=yrange[0]
+    #     ylim_max=yrange[1] 
+    #print(w0_matches)
+
+    if output_norm == True:
         figure(figsize=USH.fig_size_n)
         cla()
         #plot(w0,f0_data+1,'b',label='Input Spectra')
         plot(w0,f_flat,'r',label='Continuum Sub.')
         xlim(xlim_min,xlim_max)
+        ylim(ylim_min,ylim_max) #KSV
         #ylim(-2,10.0)
-        plot(w0,f_flat_clip,label='Threshold')
-        plot(w0_em,f0_em,'b.',label='Potential Em. Line')
-        plot(w0_matches,f0_flat_matches,'go',label='NIST Matched Em. Line')
+        #plot(w0,f_flat_clip,label='Threshold')
+        plot(w0_em,f0_em,'k.',label='Potential Em. Line')
+        plot(w0_matches,f0_flat_matches,'g.',label='NIST Matched Em. Line')
+        #axhline(thresh-0.1,  color="gray", linestyle="dotted") #KSV
         if line_id==True:
              [axvline(x=_x,color='k',linewidth=0.5,linestyle='--') for _x in w0_matches]
              line=0.0 #this stops multiple labels being plotted for lines matched to more than one emission
@@ -1347,13 +1837,16 @@ def find_em_lines(df_av,f_flat,radvel,vsini,sigma=2.5,av='med',atol=0.5,wl_win=1
         locator_params(axis='x', nbins=4)        
         #tight_layout()
         show()
-
+        
+        #print(w0_em,f0_data_em)
     if output == True:
         figure(figsize=USH.fig_size_n)
         cla()
         #plot(w0,f0_data+1,'b',label='Input Spectra')
         plot(w0,f0_data,'r',label='Input spectra')
         xlim(xlim_min,xlim_max)
+        ylim(ylim_min,ylim_max) #KSV
+        axhline(thresh-0.1, color="gray", linestyle="dotted") #KSV
         #ylim(-2,10.0)
         #plot(w0,f_flat_clip,label='Threshold')
         plot(w0_em,f0_data_em,'b.',label='Potential Em. Line')
@@ -1486,21 +1979,21 @@ def fit_gauss(x,y,ngauss=1,neg=False,g1_cen=None,g2_cen=None,g3_cen=None,neg_cen
     if ngauss==1:
         mod = gauss1 + line1
         pars=pars_g1 + pars_line
-        #pars['g1_amplitude'].set(min=0)
+        #pars['g1_height'].set(min=0)
         #pars['g1_sigma'].set(max=100)
 
     elif ngauss==2:
         mod = gauss1 + gauss2 + line1
         pars=pars_g1 + pars_g2 + pars_line
-        #pars['g1_amplitude'].set(min=0)
-        #pars['g2_amplitude'].set(min=0)
+        #pars['g1_height'].set(min=0)
+        #pars['g2_height'].set(min=0)
     
     elif ngauss==3:
         mod = gauss1 + gauss2 + gauss3 + line1
         pars=pars_g1 + pars_g2 + pars_g3 +pars_line
-        #pars['g1_amplitude'].set(min=0)
-        #pars['g2_amplitude'].set(min=0)
-        #pars['g3_amplitude'].set(min=0)
+        #pars['g1_height'].set(min=0)
+        #pars['g2_height'].set(min=0)
+        #pars['g3_height'].set(min=0)
     
     #pars['line_slope'].set(max=0)
 
@@ -1508,13 +2001,13 @@ def fit_gauss(x,y,ngauss=1,neg=False,g1_cen=None,g2_cen=None,g3_cen=None,neg_cen
     if neg==True:
         mod += gauss4
         pars += pars_g4
-        pars['g4_amplitude'].set(max=0)
+        pars['g4_height'].set(max=0)
     
     if g1_cen != None:
         pars['g1_center'].set(value=(g1_cen[0]+g1_cen[1])/2, min=g1_cen[0], max=g1_cen[1])
-    if g2_cen != None and ngauss==2:
+    if g2_cen != None and ngauss > 1:
         pars['g2_center'].set(value=(g2_cen[0]+g2_cen[1])/2, min=g2_cen[0], max=g2_cen[1])
-    if g3_cen != None and ngauss==3:
+    if g3_cen != None and ngauss > 2:
         pars['g3_center'].set(value=(g3_cen[0]+g3_cen[1])/2, min=g3_cen[0], max=g3_cen[1])
     if neg_cen != None and neg==True:
         pars['g4_center'].set(value=(neg_cen[0]+neg_cen[1])/2, min=neg_cen[0], max=neg_cen[1])
@@ -1522,9 +2015,9 @@ def fit_gauss(x,y,ngauss=1,neg=False,g1_cen=None,g2_cen=None,g3_cen=None,neg_cen
 
     if g1_sig != None:
         pars['g1_sigma'].set(value=(g1_sig[0]+g1_sig[1])/2, min=g1_sig[0], max=g1_sig[1])
-    if g2_sig != None and ngauss==2:
+    if g2_sig != None and ngauss > 1:
         pars['g2_sigma'].set(value=(g2_sig[0]+g2_sig[1])/2, min=g2_sig[0], max=g2_sig[1])
-    if g3_sig != None and ngauss==3:
+    if g3_sig != None and ngauss > 2:
         pars['g3_sigma'].set(value=(g3_sig[0]+g3_sig[1])/2, min=g3_sig[0], max=g3_sig[1])
     if neg_sig != None and neg==True:
         pars['g4_sigma'].set(value=(neg_sig[0]+neg_sig[1])/2, min=neg_sig[0], max=neg_sig[1])
@@ -1611,11 +2104,12 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
             #w0_vel=0
             SNR=0
         
-
-    x=df_av_line['vel'].values
+    try:
+        x=df_av_line['vel'].values
+    except:
+        x=df_av_line['wave'].values
     #y=df_av_line.iloc[:,2].values #change iloc to user input or average 
     y=df_av_line[obs].values #take observation date from function specified input
-
 
     
     flux_scaled=False
@@ -1643,20 +2137,24 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
     #y_sub_line=g_fit.best_fit - line_values # remove line component from final fit,
     y_sub_line=y - line_values # remove line component from final fit,
 
+    y_ori=y
+    g_fit_ori=g_fit.best_fit
+    signal=max(g_fit.best_fit)-median(line_values)
     if sub_cont_fit==True:
         y=y_sub_line
         g_fit.best_fit= g_fit.best_fit - line_values
     
     #calculate intergrated flux just from flux above continuum, i.e. subtract line compnent before integrating
     #int_flux=np.round(np.trapz(y_sub_line,x),4)
-    int_flux=np.trapz(y_sub_line,x) # check units here, need to do line * int_flux / clight for absolute fluxs
+    int_flux=np.trapz(y_sub_line,x) # for data
+    int_flux=np.trapz(g_fit_ori - line_values,x) # for fit
     
-    EW=line * (int_flux/median(line_values))/clight #in angstroms
+    EW= -1 *line * (int_flux/median(line_values))/(clight) #in angstroms
 
     
     int_flux=(line/10) * int_flux / clight #for XS flux units of erg/s/cm2/nm
+    int_flux=np.round(int_flux,4)
 
-    
     #calculate asym from the intergrated flux above the zero baseline, comparing each side of peak
     #centre_x=closest(x,g_fit.best_values['g1_center'])
     centre_x=closest(x,0) #calculate wrt to 0 velocity rather than g1 centre
@@ -1668,11 +2166,19 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
     rhs_int_flux=np.trapz(y_sub_line[centre_x_idx:-1],x[centre_x_idx:-1])
     asym=lhs_int_flux/(lhs_int_flux + rhs_int_flux)
     #asym=lhs_int_flux/(int_flux)
-    
+
+    n = len(y)
+    noise  = 0.6052697 * np.median(np.abs(2.0 * y[2:n-2] - y[0:n-4] - y[4:n]))
+
+    #signal=-1*(min(g_fit.best_fit))
+    SNR=signal/noise
+
+    print(signal,noise,SNR)
+                   
     g1_stderr=g_fit.params['g1_center'].stderr
     if (g1_stderr) is None:
         g1_stderr=999#np.nan
-    g1_amp_stderr=g_fit.params['g1_amplitude'].stderr
+    g1_amp_stderr=g_fit.params['g1_height'].stderr
     if g1_amp_stderr is None:
         g1_amp_stderr=999
     
@@ -1751,8 +2257,9 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
         
     if reject_low_gof==True and gof < gof_min and line_close==True or reject_low_gof==False:
         line_info=pd.Series(({'target':target,'mjd':obs,'gof':gof,'g1_cen':g_fit.values['g1_center'],'g1_stderr':g1_stderr, 'g1_sigma':g_fit.values['g1_sigma'],
-                            'g1_fwhm':g_fit.values['g1_fwhm'],'g1_fwhm_stderr':g_fit.params['g1_fwhm'].stderr,'g1_amp':g_fit.values['g1_amplitude']*scale_factor,'g1_amp_stderr':g1_amp_stderr*scale_factor,
-                              'peak':peak_y, 'asym':asym, 'int_flux':int_flux*scale_factor,'EW':EW,'med_cont':median(line_values)*scale_factor,'Vred':depth10_x}))
+                            'g1_fwhm':g_fit.values['g1_fwhm'],'g1_fwhm_stderr':g_fit.params['g1_fwhm'].stderr,'g1_amp':g_fit.values['g1_height']*scale_factor,'g1_amp_stderr':g1_amp_stderr*scale_factor,
+                              'peak':peak_y, 'asym':asym, 'int_flux':int_flux*scale_factor,'EW':EW,'med_cont':median(line_values)*scale_factor,'SNR':SNR,'Vred':depth10_x,
+                             'cont_slope':g_fit.values['line_slope'],'cont_slope_stderr':g_fit.params['line_slope'].stderr,'cont_intercept':g_fit.values['line_intercept'],'cont_intercept_stderr':g_fit.params['line_intercept'].stderr}))
         try:
             line_info=pd.concat([line_info,em_row],axis=0)
         except:
@@ -1761,17 +2268,17 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
         if ngauss==2 or ngauss==3:
             line_info2=pd.Series(({'g2_cen':g_fit.values['g2_center'],'g2_stderr':g2_stderr,
                                     'g2_fwhm':g_fit.values['g2_fwhm'],'g2_fwhm_stderr':g_fit.params['g2_fwhm'].stderr,
-                                   'g2_amp':g_fit.values['g2_amplitude']*scale_factor,'g2_amp_stderr':g_fit.params['g2_amplitude'].stderr}))
+                                   'g2_amp':g_fit.values['g2_height']*scale_factor,'g2_amp_stderr':g_fit.params['g2_height'].stderr}))
             line_info=pd.concat([line_info,line_info2],axis=0)
         if ngauss==3:
             line_info3=pd.Series(({'g3_cen':g_fit.values['g3_center'],'g3_stderr':g3_stderr,
                                     'g3_fwhm':g_fit.values['g3_fwhm'],'g3_fwhm_stderr':g_fit.params['g3_fwhm'].stderr,
-                                   'g3_amp':g_fit.values['g3_amplitude']*scale_factor,'g3_amp_stderr':g_fit.params['g3_amplitude'].stderr}))
+                                   'g3_amp':g_fit.values['g3_height']*scale_factor,'g3_amp_stderr':g_fit.params['g3_height'].stderr}))
             line_info=pd.concat([line_info,line_info3],axis=0)
         if neg==True:
             line_info4=pd.Series(({'g4_cen':g_fit.values['g4_center'],'g4_stderr':g4_stderr,
                                     'g4_fwhm':g_fit.values['g4_fwhm'],'g4_fwhm_stderr':g_fit.params['g4_fwhm'].stderr,
-                                   'g4_amp':g_fit.values['g4_amplitude']*scale_factor,'g4_amp_stderr':g_fit.params['g4_amplitude'].stderr}))
+                                   'g4_amp':g_fit.values['g4_height']*scale_factor,'g4_amp_stderr':g_fit.params['g4_height'].stderr}))
             line_info=pd.concat([line_info,line_info4],axis=0)
     else:
         line_info=None
@@ -1925,7 +2432,7 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
                 if not os.path.exists(dirname):
                     os.makedirs(dirname)
                 #fig.savefig(os.path.join(dirname,ele+'_'+str(np.round(line,2))+'_'+str(obs)+'.pdf'))#,bbox_inches="tight")
-                fig.savefig(os.path.join(dirname,target+'_'+ele+'_'+str(np.round(line,2))+'_'+str(obs)+'.png'),dpi=300)#,bbox_inches="tight")
+                fig.savefig(os.path.join(dirname,target+'_'+ele+'_'+str(np.round(line,2))+'_'+str(obs)+'.png'),dpi=150)#,bbox_inches="tight")
                 #print('saving file',os.path.join(dirname,ele+str(np.round(line,2))+'.pdf'))
                 if output==False:
                     close()
@@ -2075,7 +2582,7 @@ def periodogram_indiv(line_results,method='auto',cen_cor=False,plot_title=False)
 
 
 def phase_period(em_line_date_results,linewav,mjd0,period=17,gofmin=0.2,filmin=-20,filmax=20,
-                maxper=100,minper=0,errmin=100,mjmin=0,mjmax=600000):
+                maxper=100,minper=0,errmin=100,mjmin=0,mjmax=600000,period_g2=False,asym=False):
     
     #At present, the program does the wrapping with the period you give by hand
     #It also calculates the period by itself and prints some info on it.
@@ -2090,7 +2597,7 @@ def phase_period(em_line_date_results,linewav,mjd0,period=17,gofmin=0.2,filmin=-
     filmax=filmax 
     maxper=maxper #if you want to find a period below a given limit
     minper=minper #the other limit to the period to avoid the 1d thingy if that gives problems
-    mjd0=mjd0 #initial date, use the same for all lines from one source or phases will be odd!
+    mjd0=float(mjd0) #initial date, use the same for all lines from one source or phases will be odd!
     errmin=errmin #maximum error to use value 
     mjmin=float(mjmin) #minimum mjd for selection
     mjmax=float(mjmax)	#maximum mjd for selection
@@ -2098,6 +2605,16 @@ def phase_period(em_line_date_results,linewav,mjd0,period=17,gofmin=0.2,filmin=-
     mjd=em_line_date_results.mjd[em_line_date_results.obs_wl_air==linewav].astype(float)
     velo=em_line_date_results.g1_cen[em_line_date_results.obs_wl_air==linewav]
     veloerr=em_line_date_results.g1_stderr[em_line_date_results.obs_wl_air==linewav]
+    if period_g2:
+        print('fitting period for Gauss comp. 2')
+        print('-----')
+        velo=em_line_date_results.g2_cen[em_line_date_results.obs_wl_air==linewav]
+        veloerr=em_line_date_results.g2_stderr[em_line_date_results.obs_wl_air==linewav]   
+    if asym:
+        print('fitting period for line asymmetry')
+        print('-----')
+        velo=em_line_date_results.asym[em_line_date_results.obs_wl_air==linewav]
+        veloerr=em_line_date_results.gof[em_line_date_results.obs_wl_air==linewav]  
     gof=em_line_date_results.gof[em_line_date_results.obs_wl_air==linewav]
     ele=em_line_date_results.element[em_line_date_results.obs_wl_air==linewav].any()
     linename=str(int(linewav)) #ele+' '+str(int(linewav))  # line name to use it for the figure labels
@@ -2118,9 +2635,9 @@ def phase_period(em_line_date_results,linewav,mjd0,period=17,gofmin=0.2,filmin=-
 
     # -----------------------------------------------------------------------------------------------
 
-    phaseu=numpy.mod(mjd/period,1.0)
+    phaseu=np.mod(mjd/period,1.0)
 
-    phasetime=floor((mjd-mjd0)/period) #color with respect to first period
+    phasetime=np.floor((mjd-mjd0)/period) #color with respect to first period
 
     approxer=gof
 
@@ -2170,7 +2687,7 @@ def phase_period(em_line_date_results,linewav,mjd0,period=17,gofmin=0.2,filmin=-
     print('Phase',pout[2]*360.,'+-',sqrt(cova[2,2])*360, 'degrees')
     # -----------------------------------------------------------------------------------------------
     #Do Lomb Scargle
-    perio = np.linspace(0.1,700, 100000)
+    perio = np.linspace(0.1,700, 2000)
     freq= 1 / perio
 
     #use median errors to avoid issues with LSP
@@ -2210,7 +2727,12 @@ def phase_period(em_line_date_results,linewav,mjd0,period=17,gofmin=0.2,filmin=-
     #legend(loc='upper left', fontsize=15)
     ax=[-0.1,2.1,min(velo)-0.5,max(velo)+0.5]
 
-    ytext='V (km/s) for '+ linename
+    gcomp=' g1'
+    if period_g2:
+        gcomp=' g2'
+    if asym:
+        gcomp='asym'
+    ytext='V (km/s) for '+ linename + gcomp
     xtext='Phase (for a ' + str(round(period,3)) + 'd period)'
     #xlabel ('Phase (for a 7.41d period)')
     xlabel(xtext)
@@ -2219,7 +2741,7 @@ def phase_period(em_line_date_results,linewav,mjd0,period=17,gofmin=0.2,filmin=-
     show()
 
     peri=re.sub('\.','p',str(round(period,3)))
-    linename2=re.sub(' ','',sys.argv[2])
+    linename2=linename #re.sub(' ','',sys.argv[2])
     perithing='_p'+ peri + '_' + linename2 +  '_gof_'+ str(round(gofmin,1))+'_mjd_' + str(round(average(mjdu))) + '_wrapped.png'
     #namefig=re.sub('.csv',perithing,filename)
 
@@ -2262,7 +2784,7 @@ def bary_corr(mjd_insts,simbad_table,observatory='lasilla'):
     coords=SkyCoord(simbad_table['RA'][0] +' '+ simbad_table['DEC'][0],unit=(u.hourangle, u.deg))
     location=EarthLocation.of_site(observatory)
     
-    mjd_table=mjd_insts[mjd_insts.inst=='FEROS']
+    mjd_table=mjd_insts#[mjd_insts.inst=='FEROS']
     mjd_table.reset_index(drop=True,inplace=True)
     
     bary_corr_list=[]
@@ -2280,7 +2802,8 @@ def bary_corr(mjd_insts,simbad_table,observatory='lasilla'):
                            'bary_cor':bary_corr_list,
                             'diff':mjd_table['bary']-bary_corr_list})
 
-    return mjd_bary
+    #return mjd_bary
+    return mjd_bary,bary_corr,heli_corr,bary_corr1
 
 def apply_bary_cor_FEROS(mjd_insts,simbad_table,em_line_date_results):
     
@@ -2305,21 +2828,21 @@ def apply_bary_cor_FEROS(mjd_insts,simbad_table,em_line_date_results):
     return em_line_date_results_bary
 
 
-def fit_gauss_ab19(x,y,fit_nc=True,fit_bc=False,fit_hvc1=False,fit_abs=False,nc_cen=None,bc_cen=None,hvc1_cen=None,abs_cen=None,
-             nc_sig=None,bc_sig=None,hvc1_sig=None,abs_sig=None):
+def fit_gauss_ab19(x,y,fit_nc=True,fit_bc=False,fit_hvc1=False,fit_hvcr=False,nc_cen=None,bc_cen=None,hvc1_cen=None,hvcr_cen=None,
+             nc_sig=None,bc_sig=None,hvc1_sig=None,hvcr_sig=None):
 
     
     gauss1 = GaussianModel(prefix='nc_')
     gauss2 = GaussianModel(prefix='bc_')
     gauss3 = GaussianModel(prefix='hvc1_')
-    gauss4 = GaussianModel(prefix='abs_')
+    gauss4 = GaussianModel(prefix='hvcr_')
     line1=LinearModel(prefix='cont_')
     
     pars_g1 = gauss1.guess(y, x=x)
     pars_line = line1.guess(y, x=x)
     pars_g2 = gauss2.guess(y, x=x)
     pars_g3 = gauss3.guess(y, x=x)
-    pars_g4 = gauss4.guess(y, x=x ,negative=True)
+    pars_g4 = gauss4.guess(y, x=x)
     
     mod = line1
     pars = pars_line
@@ -2327,22 +2850,22 @@ def fit_gauss_ab19(x,y,fit_nc=True,fit_bc=False,fit_hvc1=False,fit_abs=False,nc_
     if fit_nc == True:
         mod+= gauss1
         pars+= pars_g1
-        pars['nc_amplitude'].set(min=0)
+        pars['nc_height'].set(min=0)
 
     if fit_bc==True:
         mod += gauss2 
         pars+= pars_g2 
-        pars['bc_amplitude'].set(min=0)
+        pars['bc_height'].set(min=0)
     
     if fit_hvc1==True:
         mod += gauss3 
         pars += pars_g3 
-        pars['hvc1_amplitude'].set(min=0)
+        pars['hvc1_height'].set(min=0)
     
-    if fit_abs==True:
+    if fit_hvcr==True:
         mod += gauss4
         pars += pars_g4
-        pars['abs_amplitude'].set(max=0)
+        pars['hvcr_height'].set(min=0)
    ###
 
     if nc_cen != None and fit_nc==True:
@@ -2351,8 +2874,8 @@ def fit_gauss_ab19(x,y,fit_nc=True,fit_bc=False,fit_hvc1=False,fit_abs=False,nc_
         pars['bc_center'].set(value=(bc_cen[0]+bc_cen[1])/2, min=bc_cen[0], max=bc_cen[1])
     if hvc1_cen != None and fit_hvc1==True:
         pars['hvc1_center'].set(value=(hvc1_cen[0]+hvc1_cen[1])/2, min=hvc1_cen[0], max=hvc1_cen[1])
-    if abs_cen != None and fit_abs==True:
-        pars['abs_center'].set(value=(abs_cen[0]+abs_cen[1])/2, min=abs_cen[0], max=abs_cen[1])
+    if hvcr_cen != None and fit_hvcr==True:
+        pars['hvcr_center'].set(value=(hvcr_cen[0]+hvcr_cen[1])/2, min=hvcr_cen[0], max=hvcr_cen[1])
 
 
     if nc_sig != None and fit_nc==True:
@@ -2361,8 +2884,8 @@ def fit_gauss_ab19(x,y,fit_nc=True,fit_bc=False,fit_hvc1=False,fit_abs=False,nc_
         pars['bc_sigma'].set(value=(bc_sig[0]+bc_sig[1])/2, min=bc_sig[0], max=bc_sig[1])
     if hvc1_sig != None and fit_hvc1==True:
         pars['hvc1_sigma'].set(value=(hvc1_sig[0]+hvc1_sig[1])/2, min=hvc1_sig[0], max=hvc1_sig[1])
-    if abs_sig != None and fit_abs==True:
-        pars['abs_sigma'].set(value=(abs_sig[0]+abs_sig[1])/2, min=abs_sig[0], max=abs_sig[1])
+    if hvcr_sig != None and fit_hvcr==True:
+        pars['hvcr_sigma'].set(value=(hvcr_sig[0]+hvcr_sig[1])/2, min=hvcr_sig[0], max=hvcr_sig[1])
     
     out = mod.fit(y, pars, x=x, weights = 1/np.std(y))    #use weights to obtain red. chi sq
 
@@ -2372,8 +2895,8 @@ def fit_gauss_ab19(x,y,fit_nc=True,fit_bc=False,fit_hvc1=False,fit_abs=False,nc_
 def gauss_stats_ab19(df_av_line,obs,em_row=999,target='temp',
                 gof_min=0.2,printout=False,output=False,savefig=False,plot_comps=True,legend=True,
                 reject_low_gof=False,reject_line_close=False,title='full',
-                fit_nc=True,fit_bc=False,fit_hvc1=False,fit_abs=False,nc_cen=None,bc_cen=None,hvc1_cen=None,abs_cen=None,
-                nc_sig=None,bc_sig=None,hvc1_sig=None,abs_sig=None):
+                fit_nc=True,fit_bc=False,fit_hvc1=False,fit_hvcr=False,nc_cen=None,bc_cen=None,hvc1_cen=None,hvcr_cen=None,
+                nc_sig=None,bc_sig=None,hvc1_sig=None,hvcr_sig=None,sub_cont_fit=True):
     '''
     
     '''
@@ -2421,22 +2944,28 @@ def gauss_stats_ab19(df_av_line,obs,em_row=999,target='temp',
         y=y/scale_factor
         flux_scaled=True
 
-    try:
-        #y -= min(y)  #shift all the lines to be min 0 flux
-        g_fit=fit_gauss_ab19(x,y,fit_nc=fit_nc,fit_bc=fit_bc,fit_hvc1=fit_hvc1,fit_abs=fit_abs,nc_cen=nc_cen,bc_cen=bc_cen,hvc1_cen=hvc1_cen,abs_cen=abs_cen,
-             nc_sig=nc_sig,bc_sig=bc_sig,hvc1_sig=hvc1_sig,abs_sig=abs_sig) #fit the linear model using above function
-    except:
-        #this is the exception for the fit failing, will just pass
-        print(line, obs,'has no data within specified range')
-        return None,None,None,None
+    # try:
+    #     #y -= min(y)  #shift all the lines to be min 0 flux
+    g_fit=fit_gauss_ab19(x,y,fit_nc=fit_nc,fit_bc=fit_bc,fit_hvc1=fit_hvc1,fit_hvcr=fit_hvcr,nc_cen=nc_cen,bc_cen=bc_cen,hvc1_cen=hvc1_cen,hvcr_cen=hvcr_cen,
+              nc_sig=nc_sig,bc_sig=bc_sig,hvc1_sig=hvc1_sig,hvcr_sig=hvcr_sig) #fit the linear model using above function
+    # except:
+    #     #this is the exception for the fit failing, will just pass
+    #     print(line, obs,'has no data within specified range')
+    #     return None,None,None,None
         
     gof=g_fit.redchi # / np.std(y)**2 #do not need to divide here as it is included in the weights in the fit_gauss() fn
     comps = g_fit.eval_components(x=x)
     
     y_base=g_fit.best_fit - min(g_fit.best_fit) # determine y values starting from 0 min
     line_values= (g_fit.best_values['cont_slope'] * x) + g_fit.best_values['cont_intercept']
-    y_sub_line=g_fit.best_fit - line_values # remove line component from final fit, for int flux
-    
+    y_sub_line=y - line_values # remove line component from final fit, for int flux
+
+    y_ori=y
+    g_fit_ori=g_fit.best_fit
+    signal=max(g_fit.best_fit)-median(line_values)
+    if sub_cont_fit==True:
+        y=y_sub_line
+        g_fit.best_fit= g_fit.best_fit - line_values
     #y-=min(comps['cont_'])
     
     #calculate intergrated flux just from flux above continuum, i.e. subtract line compnent before integrating
@@ -2446,7 +2975,8 @@ def gauss_stats_ab19(df_av_line,obs,em_row=999,target='temp',
     EW=line * (int_flux/median(line_values))/clight #in angstroms
     
     int_flux=(line*10) * int_flux / clight #for XS flux units of erg/s/cm2/nm
-    
+    int_flux=np.round(int_flux,4)
+                    
     #calculate asym from the intergrated flux above the zero baseline, comparing each side of peak
     #centre_x=closest(x,g_fit.best_values['g1_center'])
     centre_x=closest(x,0) #calculate wrt to 0 velocity rather than g1 centre
@@ -2461,13 +2991,39 @@ def gauss_stats_ab19(df_av_line,obs,em_row=999,target='temp',
     else:
         asym=999
     #asym=lhs_int_flux/(int_flux)
+
+    
+    # Assuming x (velocity) and y_sub_line (flux above continuum) are already defined
+    # Step 1: Calculate total integrated flux
+    total_flux = np.trapz(y_sub_line, x)
+    
+    # Step 2: Compute cumulative flux using trapezoidal rule
+    cumulative_flux = np.cumsum(np.diff(x) * (y_sub_line[:-1] + y_sub_line[1:]) / 2)
+    
+    # Step 3: Normalize cumulative flux
+    cumulative_flux /= total_flux
+    
+    # Step 4: Find velocity at 50% of total flux
+    half_flux_velocity = np.interp(0.5, cumulative_flux, x[:-1])
+    
+    # Step 5: Output the result
+    print(f"Velocity at 50% of total integrated flux: {half_flux_velocity:.2f} km/s")
+
+
+
+
+    n = len(y)
+    noise  = 0.6052697 * np.median(np.abs(2.0 * y[2:n-2] - y[0:n-4] - y[4:n]))
+    SNR=signal/noise
+    #print(signal,noise,SNR)
+
     
     if fit_nc!=False:
         centre_x1=closest(x,g_fit.best_values['nc_center'])
         nc_stderr=g_fit.params['nc_center'].stderr
         if (nc_stderr) is None:
             nc_stderr=999#np.nan
-        nc_amp_stderr=g_fit.params['nc_amplitude'].stderr
+        nc_amp_stderr=g_fit.params['nc_height'].stderr
         if nc_amp_stderr is None:
             nc_amp_stderr=999
     
@@ -2487,35 +3043,53 @@ def gauss_stats_ab19(df_av_line,obs,em_row=999,target='temp',
         if (hvc1_stderr) is None:
             hvc1_stderr=999
             
-    if fit_abs!=False:
-        centre_x4=closest(x,g_fit.best_values['abs_center'])
-        abs_stderr=g_fit.params['abs_center'].stderr
-        if (abs_stderr) is None:
-            abs_stderr=999
+    if fit_hvcr!=False:
+        centre_x4=closest(x,g_fit.best_values['hvcr_center'])
+        hvcr_stderr=g_fit.params['hvcr_center'].stderr
+        if (hvcr_stderr) is None:
+            hvcr_stderr=999
         
     #for reject_low_gof==True, also reject lines whose gauss centre are far from ref centre
     #also reject lines where peak value is negative (may have to change this in future for abs lines)
     #if g_fit.values['nc_center'] > w0_vel-10 and g_fit.values['nc_center'] < w0_vel+10 and g_fit.values['nc_fwhm'] < 30 and peak_y > 0:
     #if g_fit.values['nc_center'] > min(x) and g_fit.values['nc_center'] < max(x):# and nc_stderr < 900:# and int_flux > 0:# and abs(g_fit.best_values['line_slope']/peak_y)<0.02: #and g_fit.values['nc_fwhm'] < 50
-    if centre_x > min(x) and centre_x < max(x):# and nc_stderr < 900:# and int_flux > 0:# and abs(g_fit.best_values['line_slope']/peak_y)<0.02: #and g_fit.values['nc_fwhm'] < 50
+    if centre_x > min(x) and centre_x < max(x):# and nc_stderr < 900:# and int_flux > 0:# and hvcr(g_fit.best_values['line_slope']/peak_y)<0.02: #and g_fit.values['nc_fwhm'] < 50
         line_close=True
     elif reject_line_close==False:
         line_close=True
     else:
         line_close=False
+
+    fit_sc=False
+    if (fit_nc==True and fit_bc == False) or (fit_nc==False and fit_bc==True):
+        fit_sc=True
+        fit_nc=False
+        fit_bc=False
+        
         
     if reject_low_gof==True and gof < gof_min and line_close==True or reject_low_gof==False:
-        line_info=pd.Series(({'star':target,'int_flux':int_flux*scale_factor,'EW':EW, 'med_cont':median(line_values)*scale_factor,'mjd':obs,'gof':gof,'peak':peak_y, 'asym':asym,
-                             'fit_nc':fit_nc,'fit_bc':fit_bc,'fit_hvc1':fit_hvc1}),dtype='object')
+        line_info=pd.Series(({'star':target,'mjd':obs,'line':line,'int_flux':int_flux*scale_factor,'EW':EW,'SNR':SNR, 'med_cont':median(line_values)*scale_factor,'gof':gof,'peak':peak_y, 'asym':asym,
+                             'fit_sc':fit_sc,'fit_nc':fit_nc,'fit_bc':fit_bc,'fit_hvc1':fit_hvc1,'fit_hvc_r':fit_hvcr, 'cont_slope':g_fit.values['cont_slope'],'cont_slope_stderr':g_fit.params['cont_slope'].stderr,
+                              'cont_intercept':g_fit.values['cont_intercept'],'cont_intercept_stderr':g_fit.params['cont_intercept'].stderr}),dtype='object')
         try:
             line_info=pd.concat([em_row,line_info],axis=0)
         except:
             pass
+
+        if fit_sc==True:
+            line_info_sc=pd.Series(({'sc_cen':g_fit.values['nc_center'],'sc_stderr':nc_stderr,
+                                'sc_fwhm':g_fit.values['nc_fwhm'],'sc_fwhm_stderr':g_fit.params['nc_fwhm'].stderr,
+                                   'sc_amp':g_fit.values['nc_height']*scale_factor,'sc_amp_stderr':nc_amp_stderr*scale_factor}))
+        else:
+            line_info_sc=pd.Series(({'sc_cen':nan,'sc_stderr':nan, 
+                                'sc_fwhm':nan,'sc_fwhm_stderr':nan,
+                                   'sc_amp':nan,'sc_amp_stderr':nan}))
+        line_info=pd.concat([line_info,line_info_sc],axis=0)
         
         if fit_nc==True:
             line_info1=pd.Series(({'nc_cen':g_fit.values['nc_center'],'nc_stderr':nc_stderr,
                                 'nc_fwhm':g_fit.values['nc_fwhm'],'nc_fwhm_stderr':g_fit.params['nc_fwhm'].stderr,
-                                   'nc_amp':g_fit.values['nc_amplitude']*scale_factor,'nc_amp_stderr':nc_amp_stderr*scale_factor}))
+                                   'nc_amp':g_fit.values['nc_height']*scale_factor,'nc_amp_stderr':nc_amp_stderr*scale_factor}))
         else:
             line_info1=pd.Series(({'nc_cen':nan,'nc_stderr':nan, 
                                 'nc_fwhm':nan,'nc_fwhm_stderr':nan,
@@ -2524,7 +3098,7 @@ def gauss_stats_ab19(df_av_line,obs,em_row=999,target='temp',
         if fit_bc==True:
             line_info2=pd.Series(({'bc_cen':g_fit.values['bc_center'],'bc_stderr':bc_stderr,
                                     'bc_fwhm':g_fit.values['bc_fwhm'],'bc_fwhm_stderr':g_fit.params['bc_fwhm'].stderr,
-                                   'bc_amp':g_fit.values['bc_amplitude']*scale_factor,'bc_amp_stderr':g_fit.params['bc_amplitude'].stderr}))
+                                   'bc_amp':g_fit.values['bc_height']*scale_factor,'bc_amp_stderr':g_fit.params['bc_height'].stderr}))
         else:
             line_info2=pd.Series(({'bc_cen':nan,'bc_stderr':nan,
                                     'bc_fwhm':nan,'bc_fwhm_stderr':nan,
@@ -2533,25 +3107,32 @@ def gauss_stats_ab19(df_av_line,obs,em_row=999,target='temp',
         if fit_hvc1==True:
             line_info3=pd.Series(({'hvc1_cen':g_fit.values['hvc1_center'],'hvc1_stderr':hvc1_stderr,
                                     'hvc1_fwhm':g_fit.values['hvc1_fwhm'],'hvc1_fwhm_stderr':g_fit.params['hvc1_fwhm'].stderr,
-                                   'hvc1_amp':g_fit.values['hvc1_amplitude']*scale_factor,'hvc1_amp_stderr':g_fit.params['hvc1_amplitude'].stderr}))
+                                   'hvc1_amp':g_fit.values['hvc1_height']*scale_factor,'hvc1_amp_stderr':g_fit.params['hvc1_height'].stderr}))
         else:
             line_info3=pd.Series(({'hvc1_cen':nan,'hvc1_stderr':nan,
                                     'hvc1_fwhm':nan,'hvc1_fwhm_stderr':nan,
                                    'hvc1_amp':nan,'hvc1_amp_stderr':nan}))
         line_info=pd.concat([line_info,line_info3],axis=0)
-        if fit_abs==True:
-            line_info4=pd.Series(({'abs_cen':g_fit.values['abs_center'],'abs_stderr':abs_stderr,
-                                    'abs_fwhm':g_fit.values['abs_fwhm'],'abs_fwhm_stderr':g_fit.params['abs_fwhm'].stderr,
-                                   'abs_amp':g_fit.values['abs_amplitude']*scale_factor,'abs_amp_stderr':g_fit.params['abs_amplitude'].stderr}))
-            line_info=pd.concat([line_info,line_info4],axis=0)
+        if fit_hvcr==True:
+            line_info4=pd.Series(({'hvcr_cen':g_fit.values['hvcr_center'],'hvcr_stderr':hvcr_stderr,
+                                    'hvcr_fwhm':g_fit.values['hvcr_fwhm'],'hvcr_fwhm_stderr':g_fit.params['hvcr_fwhm'].stderr,
+                                   'hvcr_amp':g_fit.values['hvcr_height']*scale_factor,'hvcr_amp_stderr':g_fit.params['hvcr_height'].stderr}))
+        else:
+            line_info4=pd.Series(({'hvcr_cen':nan,'hvcr_stderr':nan,
+                                    'hvcr_fwhm':nan,'hvcr_fwhm_stderr':nan,
+                                   'hvcr_amp':nan,'hvcr_amp_stderr':nan}))
+        line_info=pd.concat([line_info,line_info4],axis=0)
+
     else:
         line_info=None
     
     pass_gof='N'
     if gof < gof_min and line_close==True:
         pass_gof='Y'
-        
-    
+
+    # Add half flux velocity to line_info
+    line_info['half_flux_velocity'] = half_flux_velocity
+
     if printout==True:
         print(g_fit.fit_report(min_correl=0.25))
         #print('corrected chi^2: %.5f' %(g_fit.redchi / np.std(y)**2))
@@ -2566,7 +3147,7 @@ def gauss_stats_ab19(df_av_line,obs,em_row=999,target='temp',
             ioff()
             fig, ax = subplots(1,1,figsize=USH.fig_size_s)#,gridspec_kw={'wspace':0})
             if title=='full':
-                fig.suptitle('%s fit of line at %.2f Angstroms,   Pass GoF:%s \n'  %(obs,line,pass_gof),fontsize=10)
+                fig.suptitle(target+' %s fit of line at %.2f Angstroms'  %(obs,line),fontsize=10)
             if flux_scaled==False:
                 ax.set(xlabel='Velocity (km/s)', ylabel='Flux')
             else:
@@ -2574,68 +3155,73 @@ def gauss_stats_ab19(df_av_line,obs,em_row=999,target='temp',
                
             ax.plot(x,y, c='black',ls='-',lw=2,label='Input')
             #ax[0].plot(x, g_fit.init_fit, 'k--', label='initial fit')
-            ax.plot(x, g_fit.best_fit, c='fuchsia',ls='--',lw=2, label='Best fit')
+            ax.plot(x, g_fit.best_fit, c='fuchsia',ls='-',lw=2, label='Best fit')
 
-            ax.fill_between(x,g_fit.best_fit-dely,g_fit.best_fit+dely,color='#ABABAB',label='3-$\sigma$ uncertainty')
+            ax.fill_between(x,g_fit.best_fit-dely,g_fit.best_fit+dely,color='#ABABAB')#,label='3-$\sigma$ uncertainty')
                                
             
             
             #ax[1].plot(x, y, 'b')
-            plot_title=('GoF: %.2e, Int.Flux: %.2E, Asym: %.4f, Line: %s%s %s-%s \n ' %(
-                    gof, int_flux, asym,ele,sp_num,J_i,J_k))
+            if title=='full' or title=='simple':
+                plot_title=('GoF: %.2e, Int.Flux: %.2E, EW: %.2f, Asym: %.4f,  \n ' %(
+                    gof, int_flux,EW, asym))
             if fit_bc==True:
                 if title=='full':
-                    plot_title+=(' bc_cen= %.1f$\pm$%.2f, bc_fwhm= %.2f' %(
+                    plot_title+=(' bc_cen= %.1f$\pm$%.2f, bc_fwhm= %.2f, ' %(
                      g_fit.best_values['bc_center'],bc_stderr, g_fit.values['bc_fwhm']))                   
-                elif title=='simple':
-                    plot_title=('%s %s %.2f' %(obs,ele,line)) 
+                # elif title=='simple':
+                #     plot_title=('%s %s %.2f, ' %(obs,ele,line)) 
                 if plot_comps==True:
                     ax.plot(x, comps['bc_'], c='red',ls='--', label='BC')
                     ax.fill_between(x,comps['bc_'],color='red')
                     ax.axvline(x=centre_x2,color='k',linewidth=0.5,linestyle='--')
-            if fit_nc==True:
+            if fit_nc==True or fit_sc==True:
                 if title=='full':
-                    plot_title+=('nc_cen= %.1f$\pm$%.2f, ' %(
-                    g_fit.best_values['nc_center'],nc_stderr))
-                elif title=='simple':
-                    plot_title=('%s %s %.2f' %(obs,ele,line))   
+                    plot_title+=('nc_cen= %.1f$\pm$%.2f, nc_fwhm= %.2f, ' %(
+                    g_fit.best_values['nc_center'],nc_stderr,g_fit.values['nc_fwhm']))
+                # elif title=='simple':
+                #     plot_title=('%s %s %.2f' %(obs,ele,line))   
                 if plot_comps==True:
                     if fit_bc==True:
                         ax.plot(x, comps['nc_'], c='deepskyblue',ls='--', label='NC')
                         ax.fill_between(x,comps['nc_'],color='deepskyblue')
                     else:
-                        ax.plot(x, comps['nc_'], c='blue',ls='--', label='NC')
-                        ax.fill_between(x,comps['nc_'],color='blue')
+                        ax.plot(x, comps['nc_'], c='royalblue',ls='--', label='SC')
+                        ax.fill_between(x,comps['nc_'],color='royalblue')
                     ax.axvline(x=centre_x1,color='k',linewidth=0.5,linestyle='--')                     
 
             if fit_hvc1==True:
                 if title=='full':
                     plot_title+=('hvc1_cen= %.1f$\pm$%.2f, ' %(
                     g_fit.best_values['hvc1_center'],hvc1_stderr))                   
-                elif title=='simple':
-                    plot_title=('%s %s %.2f' %(obs,ele,line)) 
+                # elif title=='simple':
+                #     plot_title=('%s %s %.2f' %(obs,ele,line)) 
                 if plot_comps==True:    
                     ax.plot(x, comps['hvc1_'], c='lime',ls='--', label='HVC1')
                     ax.fill_between(x,comps['hvc1_'],color='lime')
                     ax.axvline(x=centre_x3,color='k',linewidth=0.5,linestyle='--')
-            if fit_abs==True:
+            if fit_hvcr==True:
+                if title=='full':
+                    plot_title+=('hvcr_cen= %.1f$\pm$%.2f' %(
+                    g_fit.best_values['hvcr_center'],hvcr_stderr)) 
                 if plot_comps==True:
-                    ax.plot(x, comps['abs_'], 'c--', label='Abs.')
+                    ax.plot(x, comps['hvcr_'], c='lime',ls='--', label='hvcr.')
+                    ax.fill_between(x,comps['hvcr_'],color='lime')
                     ax.axvline(x=centre_x4,color='k',linewidth=0.5,linestyle='--')
-                    plot_title+=('abs_cen= %.1f$\pm$%.2f' %(
-                    g_fit.best_values['abs_center'],abs_stderr)) 
+                    
             
  
-            ax.set_title(str(plot_title))
+            if title!='none':
+                ax.set_title(str(plot_title),fontsize=8)
 
 
-            if plot_comps==True:
-                ax.plot(x, comps['cont_'], c='orange',ls='--', label='Continuum')
+            #if plot_comps==True:
+                #ax.plot(x, comps['cont_'], c='orange',ls='--', label='Continuum')
             if legend==True: 
                 ax.legend(fontsize=12)
 
             if output==True:
-                #tight_layout()
+                tight_layout()
                 show()
             else:
                 close()
@@ -2643,21 +3229,25 @@ def gauss_stats_ab19(df_av_line,obs,em_row=999,target='temp',
                 #output dir
                 #dirname=os.path.join('output_plots', target+'_'+timenow)
                 timenow_plot=time.strftime("%d_%b_%Y_%Hh", time.gmtime())
-                dirname=os.path.join('output_plots',timenow_plot)                
+                dirname=os.path.join('ab19_output_plots',timenow_plot)                
                 if not os.path.exists(dirname):
                     os.makedirs(dirname)
-                plot_name=target+'_'+ele+'_'+str(np.round(line,2))+'_'+str(obs)
-                plot_name=plot_name+'_nc' if fit_nc == True else plot_name
-                plot_name=plot_name+'_bc' if fit_bc == True else plot_name
+                plot_name=target+'_'+str(np.round(line,2))+'_'+str(obs)
+                plot_name=plot_name+'_sc' if (fit_nc == True and fit_bc==False) else plot_name
+                plot_name=plot_name+'_ncbc' if fit_bc == True else plot_name
                 plot_name=plot_name+'_hvc1' if fit_hvc1 == True else plot_name
+                plot_name=plot_name+'_hvcr' if fit_hvcr == True else plot_name
                 fig.savefig(os.path.join(dirname,plot_name+'.png'),dpi=300)#,bbox_inches="tight")
                 #print('saving file',os.path.join(dirname,ele+str(np.round(line,2))+'.pdf'))
                 if output==False:
                     close()
             ion()
-        
+
     return g_fit,x,g_fit.best_fit, line_info
 
+
+
+### below is not maintained
 def get_line_results_ab19(em_matches,df_av,line_date_list,target,w_range=0.6,radvel=USH.radvel,legend=True,title='full',
                     gof_min=0.2,reject_low_gof=True,reject_line_close=True,printout=False,output=False,savefig=False,plot_comps=True,
                     fit_nc=True,fit_bc=False,fit_hvc1=False,fit_abs=False,nc_cen=None,bc_cen=None,hvc1_cen=None,abs_cen=None,
@@ -2667,7 +3257,8 @@ def get_line_results_ab19(em_matches,df_av,line_date_list,target,w_range=0.6,rad
     '''
     
     #check that list of lines within range of data, good for loaded in lists of lines covering larger ranges
-    em_matches=em_matches[em_matches.w0.between(min(df_av.wave),max(df_av.wave))]
+    # if em_matches!=None:
+    #     em_matches=em_matches[em_matches.w0.between(min(df_av.wave),max(df_av.wave))]
     
     if USH.instrument[0]=='XMM' or USH.instrument[0]=='Sol' or USH.instrument[0]=='COS' or USH.instrument[0]=='STIS':
         wave='ritz_wl_vac'
@@ -2678,11 +3269,23 @@ def get_line_results_ab19(em_matches,df_av,line_date_list,target,w_range=0.6,rad
     print('Fitting lines using',wave,' and radvel=',radvel)
     
     line_results=pd.DataFrame()
+                        
+    if isinstance(em_matches, float):
+        data = {'obs_wl_air': [em_matches]}
+        # Create DataFrame
+        em_matches = pd.DataFrame(data)
+                        
+                        
+    # if em_matches==None:
+    #     data = {'obs_wl_air': [6300]}
+    #     # Create DataFrame
+    #     em_matches = pd.DataFrame(data)
+    
     for index,row in em_matches.iterrows():
         line = row[wave]
         df_av_line=get_line_spec(df_av,line,vel_offset=radvel,w_range=w_range,vel=True)
         
-        df_av_line=df_av_line.query('vel < 233 or vel > 300')
+        #df_av_line=df_av_line.query('vel < 233 or vel > 300')
 
         
         for date in line_date_list:# ['med_flux']:#[df_av_line.columns[2]]:# df_av_line.columns[1:-3]:

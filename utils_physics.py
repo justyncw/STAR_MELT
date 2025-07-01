@@ -44,6 +44,28 @@ k=astropy.constants.k_B.to_value()
 m_e=astropy.constants.m_e.to_value()
 
 # =============================================================================
+# spectra equation functions
+# =============================================================================
+def L_line(f_line,d_star):
+    return log10((4*np.pi * ( d_star *u.pc.to('cm') )**2 *  f_line)/astropy.constants.L_sun.to('erg/s').to_value())
+
+def L_acc(L_line,a,b):
+    return a * L_line + b
+
+def M_acc(L_acc, R_star, M_star):
+    R_star=R_star*astropy.constants.R_sun
+    M_star=M_star*astropy.constants.M_sun
+    M_acc=1.25 * (((10**L_acc * astropy.constants.L_sun) * R_star)/(astropy.constants.G * M_star)).to('kg/yr')/astropy.constants.M_sun
+    return M_acc
+
+def L_acc_from_Macc(M_acc, R_star, M_star):
+    M_acc=10**M_acc *1/u.year * astropy.constants.M_sun
+    R_star=R_star*astropy.constants.R_sun
+    M_star=M_star*astropy.constants.M_sun
+    L_acc=( (astropy.constants.G * M_star * M_acc) / (1.25 * R_star)  ).to('W') / astropy.constants.L_sun
+    return log10(L_acc.value)
+    
+# =============================================================================
 # functions for equations
 # =============================================================================
 def B_ik(Aki,v,g_k,g_i):
@@ -103,12 +125,17 @@ Te=k*T*6.242e+18
 U_T_list= pd.read_csv('Line_Resources/U_T_list.csv',index_col=False,comment='#',skip_blank_lines=True)
 resample_U_Fe_I=interp1d(U_T_list.dropna()['T'] ,U_T_list.dropna()['U_Fe_I'] ,fill_value='extrapolate')
 resample_U_Fe_II=interp1d(U_T_list.dropna()['T'] ,U_T_list.dropna()['U_Fe_II'] ,fill_value='extrapolate')
+resample_U_Ca_II=interp1d(U_T_list.dropna()['T'] ,U_T_list.dropna()['U_Ca_II'] ,fill_value='extrapolate')
+
 U_Fe_I=resample_U_Fe_I(T_list)
 U_Fe_II=resample_U_Fe_II(T_list)
-U_T_list_resampled=pd.concat((U_T_list['T'],U_T_list['Te'],pd.Series(U_Fe_I,name='U_Fe_I'),pd.Series(U_Fe_II,name='U_Fe_II')),axis=1)
+U_Ca_II=resample_U_Ca_II(T_list)
+
+U_T_list_resampled=pd.concat((U_T_list['T'],U_T_list['Te'],pd.Series(U_Fe_I,name='U_Fe_I'),pd.Series(U_Fe_II,name='U_Fe_II'),pd.Series(U_Ca_II,name='U_Ca_II')),axis=1)
 #can also the resample_U_Fe_I with T as an arg
 U=resample_U_Fe_I
 U1=resample_U_Fe_II
+UCa=resample_U_Ca_II
 
 #U_list=U_Fe_II
 
@@ -136,6 +163,7 @@ def sobolev(element,sp_num,
     log_n=np.arange(N_range[0],N_range[1],0.2)
     U=resample_U_Fe_I(T_list)
     U1=resample_U_Fe_II(T_list)
+    UCa=resample_U_Ca_II(T_list)
 
     
     wl_s=wl_s * 1e-10
@@ -143,12 +171,15 @@ def sobolev(element,sp_num,
     Ei_s=Ei_s / 6.242e+18
     Ei_w=Ei_w / 6.242e+18
     
-    if sp_num == 2:
-        U_list=U
-    elif sp_num == 1:
-        U_list=U1
+    if element=='Fe':
+        if sp_num == 2:
+            U_list=U
+        elif sp_num == 1:
+            U_list=U1
+    elif element=='Ca':
+        U_list=UCa
     else:
-        print('Error, can only compute Fe I or II until more partition functions obtained')
+        print('Error, can only compute Fe I, Fe II, Ca II until more partition functions obtained')
     
     
     iflux_ratio=iflux_w/iflux_s
@@ -237,16 +268,19 @@ def sobolev_by_element(em_line_date_results_common_Ek,target,N_range=[6,22],T_ra
     line_labels=[]
     for Ek in unique(em_line_date_results_common_Ek.Ek):
         Ek_lines=em_line_date_results_common_Ek[em_line_date_results_common_Ek.Ek == Ek]
-        element=Ek_lines.element.any()
+        element=Ek_lines.element.values[0]
         sp_num=Ek_lines.sp_num.values[0]
         if sp_num==1:
             sp='I'
         else:
             sp='II'
-        weak=Ek_lines.loc[Ek_lines.Aki.idxmin()]
-        strong=Ek_lines.loc[Ek_lines.Aki.idxmax()]
+        weak=Ek_lines.loc[Ek_lines.Aki.astype(float).idxmin()]
+        strong=Ek_lines.loc[Ek_lines.Aki.astype(float).idxmax()]
+        if strong.Aki==weak.Aki:
+            strong=Ek_lines.loc[Ek_lines.int_flux.astype(float).idxmax()]
+            weak=Ek_lines.loc[Ek_lines.int_flux.astype(float).idxmin()]
         #print(weak.int_flux / strong.int_flux) #if < 1?
-        if weak.int_flux/strong.int_flux < 3 and weak.Aki!=strong.Aki:
+        if weak.int_flux/strong.int_flux < 3: #and weak.Aki!=strong.Aki:
             obs_ratio_prop=sobolev(element,sp_num,strong.Aki,strong.obs_wl_air,strong.g_k,strong.g_i,float(strong.Ei),strong.int_flux,
                         weak.Aki,weak.obs_wl_air,weak.g_k,weak.g_i,float(weak.Ei),weak.int_flux,
                         N_range=N_range,T_range=T_range,target=target,output=output,savefig=savefig)

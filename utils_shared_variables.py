@@ -35,11 +35,27 @@ instrument='USH'
 radvel=0
 vsini=0
 
+inst_res = {
+    'ESPRESSO': 140000,
+    'HARPS': 115000,
+    'ROTFIT':115000,
+    'XSHOOTER': 18400,
+    'UVES': 60000,
+    'PHOENIX': 500000,
+}
+
 #figure sizes used in module file
 fig_size_s=(6,6)
 fig_size_sn=(4.5,5)
 fig_size_l=(9,6)
 fig_size_n=(9,4)
+
+
+#Spectral Type = Teff conversion file
+try:
+    spt_teff=pd.read_csv('Line_resources/HH14_SpT_Teff.csv')
+except:
+    pass
 
 
 #Read in line files
@@ -83,4 +99,60 @@ line_table_prev_obs.sort_values(['obs_wl_air','prev_obs'],inplace=True)
 line_table_prev_obs.drop_duplicates(['obs_wl_air'],inplace=True)
 line_table_prev_obs.reset_index(drop=True,inplace=True)
 line_table_prev_obs = line_table_prev_obs[ [ col for col in line_table_prev_obs.columns if col != 'prev' ] + ['prev'] ]
+
+
+#photosphere removal data...
+def load_phot_templates(template_dir):
+    print('reading STAR-MELT photpsheric template stars...')
+    data_dir_cl3=os.path.join(template_dir,'PEN_ESP_ClassIII')
+    data_fits_files_cl3=get_files(data_dir_cl3,'.fits','.FTZ')
+    cl3_rvs=pd.read_csv(os.path.join(data_dir_cl3,'ESP_Cl3_RVs_240509.csv'))
+    data_dates_range_cl3,instrument,w0_cl3=get_instrument_date_details(data_fits_files_cl3,qgrid=True)
+    data_dates_range_cl3['templ']='Cl3'
+    data_dir_ms=os.path.join(template_dir,'templates_HARPS_230629')
+    data_fits_files_ms=get_files(data_dir_ms,'.fits','.FTZ')
+    data_dates_range_ms,instrument,w0_ms=get_instrument_date_details(data_fits_files_ms,qgrid=True)
+    data_dates_range_ms['templ']='MS'
+    data_dates_range_templ=pd.concat((data_dates_range_cl3,data_dates_range_ms))
+    
+    spts=[]
+    rvs=[]
+    rvs_errs=[]
+    for target in data_dates_range_templ.target:
+        if target.startswith('V '):
+            target=target.replace('V ', '', 1)
+        elif target == 'HD816384':
+            target='HIP116384'
+        try:
+            simbad=customSimbad.query_object(target)
+            radvel_templ=simbad['RVZ_RADVEL'][0]
+            radvel_templ_err=simbad['RVZ_ERROR'][0]
+            mk_templ=simbad['SP_TYPE'][0]
+            if mk_templ.startswith('d'):
+                mk_templ = mk_templ[1:]#remove 'd' from start of sp_t
+            if len(mk_templ) >= 3 and mk_templ[2] == '.':
+                mk_templ = mk_templ[:4]
+            else:
+                mk_templ = mk_templ[:2]
+        except:
+            mk_templ='K9'
+            pass  
+        if target in cl3_rvs.star.values:
+            mk_templ=cl3_rvs.SpT[cl3_rvs['star']==target].values[0]
+            radvel_templ=cl3_rvs.rv[cl3_rvs['star']==target].values[0]
+            radvel_templ_err=cl3_rvs.rv_err[cl3_rvs['star']==target].values[0]
+
+        spts.append(mk_templ)
+        rvs.append(radvel_templ)
+        rvs_errs.append(radvel_templ_err)
+        #print('%s SpT:  ' %(target) ,mk)
+    data_dates_range_templ['sp_t']=spts
+    data_dates_range_templ['RV']=rvs
+    data_dates_range_templ['RV_err']=rvs_errs
+    cols_to_move = ['target','sp_t','templ']
+    data_dates_range_templ= data_dates_range_templ[ cols_to_move + [ col for col in data_dates_range_templ.columns if col not in cols_to_move ] ]
+    print('read ',len(data_dates_range_templ), '.fits template files')
+    return data_dates_range_templ
+
+
 

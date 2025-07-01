@@ -14,11 +14,14 @@ from ESP_fits_get_spectra import *
 from astropy.io import fits
 from astropy.time import Time,TimeDelta
 from astroquery.simbad import Simbad
+from astropy import units as u
 import ipywidgets as widgets
 from ipywidgets import interact
 from IPython.display import display,clear_output
 import astropy.constants
 import builtins
+from PyAstronomy import pyasl
+
 
 clight=astropy.constants.c.to('km/s').to_value()
 
@@ -128,6 +131,16 @@ def show_output(plot='function'):
     else:
         return False
 
+def vac_to_air(wavelength):
+    """
+    Griesen 2006 reports that the error in naively inverting Eqn 65 is less
+    than 10^-9 and therefore acceptable.  This is therefore eqn 67
+    """
+    wavelength=wavelength*u.angstrom
+    wlum = wavelength.to(u.um).value
+    nl = (1+1e-6*(287.6155+1.62887/wlum**2+0.01360/wlum**4))
+    return ((wavelength/nl).value)
+
 def get_fits_files_simbad(target,standards_dir,simbad_out=False,prompt=True):
     '''
     look up star in SIMBAD and get spectral type 
@@ -172,11 +185,13 @@ def get_fits_files_simbad(target,standards_dir,simbad_out=False,prompt=True):
     
     ''' find closest spectral type template star from available data'''
     stand_sp_num=[]
-    for stand_star in listdir_fullpath(standards_dir):
-        stand_mk=stand_star.split('/')[-1]
+    for stand_star in os.listdir(standards_dir):
+        stand_mk=stand_star
         if mk[0].lower() == stand_mk[0].lower():
             stand_sp_num.append(float(stand_mk[1]))
-            #print (stand_star)
+    
+    
+           #print (stand_star)
     try:
         stand_spec_num_closest=closest(stand_sp_num,float(mk[1]))#check for if not a number
     except:
@@ -190,7 +205,7 @@ def get_fits_files_simbad(target,standards_dir,simbad_out=False,prompt=True):
     
     
     '''find radial velocity of template star'''
-    standard_star=standard_fits_files[0].split('/')[-2]
+    standard_star=os.path.basename(os.path.dirname(standard_fits_files[0]))
     try:
         simbad_table2=customSimbad.query_object(standard_star)
         simbad_table2.colnames
@@ -201,7 +216,7 @@ def get_fits_files_simbad(target,standards_dir,simbad_out=False,prompt=True):
     except:
         print('!! simbad query failed !!')
         st_rv=input('>< >< enter RV of template star: \n')
-    
+        
     if simbad_out==False:
         return standard_fits_files,mk,stype,st_rv
     else:
@@ -230,36 +245,7 @@ def spec_HST(flux_filename):
 
     return info,wave,flux,error      
 
-def spec_simple_fits(flux_filename):
-    hdu = fits.open(flux_filename)
-    hdr = hdu[0].header
-    
-    wave=hdu[0].data[0]
-    flux=hdu[0].data[1]
-
-    try:
-        target=hdr['OBJECT']    #object target
-        start_obs=hdr['DATE-OBS']
-        MJD_start_obs=hdr['MJD-OBS']
-        instrume=hdr['INSTRUME']
-    except:
-        target=hdr['OBJECT']    #for iSHELL
-        start_obs=hdr['AVE_DATE']
-        MJD_start_obs=hdr['AVE_MJD']
-        instrume=hdr['INSTR']
-            
-
-    hdu.close()
-    wave=np.array(wave)
-    if min(wave)<10:
-        wave=wave*10e3
-    flux=np.array(flux)
-    error=None
-
-    info = [target,start_obs,MJD_start_obs,instrume,min(wave)/10,max(wave)/10,'N/A','N/A'] 
-
-    return info,wave,flux,error 
-    
+   
 def spec_XMM(flux_filename):
     hdul = fits.open(flux_filename)
     data = hdul[1].data
@@ -366,7 +352,10 @@ def spec_readspec(file):
                 try:
                     bary_corr=hdr['HIERARCH ESO QC BERV']
                 except:
-                    bary_corr=0
+                    try:
+                        bary_cor=hdr['BARY_COR']
+                    except:
+                        bary_corr=0
                 
         elif hdu[1].columns[0] is not None:
             scidata = hdu[1].data
@@ -390,7 +379,10 @@ def spec_readspec(file):
                 try:
                     bary_corr=hdr['HIERARCH ESO QC BERV']
                 except:
-                    bary_corr=0
+                    try:
+                        bary_corr=hdr['BARY_COR']
+                    except:
+                        bary_corr=0
 
         else:
             print('!!!	Wavelength keyword not found in FITS HEADER 	!!!')
@@ -486,6 +478,48 @@ def readspec_espresso_air(file,err_out='NO',hdr_out='NO'):
     else:
         return info,wave,flux,err,hdr
 
+def spec_simple_fits(flux_filename):
+    hdu = fits.open(flux_filename)
+
+    if len(hdu) < 4:
+        hdr = hdu[0].header
+        wave=hdu[0].data[0]
+        flux=hdu[0].data[1]
+    else:
+        hdr = hdu[2].header
+        wave=hdu[2].data[0][0]
+        flux=hdu[2].data[0][1]
+
+    try:
+        target=hdr['OBJECT']    #object target
+        start_obs=hdr['DATE-OBS']
+        MJD_start_obs=hdr['MJD-OBS']
+        instrume=hdr['INSTRUME']
+    except:
+        target=hdr['OBJECT']    #for iSHELL
+        start_obs=hdr['AVE_DATE']
+        MJD_start_obs=hdr['AVE_MJD']
+        instrume=hdr['INSTR']
+
+    try:
+        bary_corr=hdr['HIERARCH ESO QC VRAD BARYCOR']
+    except:
+        try:
+            bary_corr=hdr['HIERARCH ESO QC BERV']
+        except:
+            bary_corr='N/A'
+
+    hdu.close()
+    wave=np.array(wave)
+    if min(wave)<10:
+        wave=wave*10e3
+    flux=np.array(flux)
+    error=None
+
+    info = [target,start_obs,MJD_start_obs,instrume,min(wave)/10,max(wave)/10,bary_corr,'N/A'] 
+
+    return info,wave,flux,error 
+
 
 def read_fits_files(filename,verbose=False):
     try:
@@ -509,9 +543,9 @@ def read_fits_files(filename,verbose=False):
                         print('using spec_readspec()')    
                 except:
                     try:
-                        info,wave,flux,err=spec_ROTFIT(filename)
+                        info,wave,flux,err=spec_simple_fits(filename)
                         if verbose==True:
-                            print('using spec_ROTFIT()') 
+                            print('using spec_simple_fits()') 
                     except:
                         try:
                             info,wave,flux,err=spec_XMM(filename)
@@ -524,9 +558,9 @@ def read_fits_files(filename,verbose=False):
                                     print('using spec_HST()')                                 
                             except:
                                 try:
-                                    info,wave,flux,err=spec_simple_fits(filename)
+                                    info,wave,flux,err=spec_ROTFIT(filename)
                                     if verbose==True:
-                                        print('using simple read in spec_simple_fits()')
+                                        print('using simple read in spec_ROTFIT()')
                                 except:
                                     print('file read error!!!')
                                     print(filename,'cannot be read by any of the read in functions')  #files dont work
@@ -549,6 +583,32 @@ def organise_fits_files(dir_of_files,output_dir):
             print('fits file: %s cannot be read'%(f))
             pass
 
+def read_PHOENIX_files(teff=4000,logg=4.5,Z=0.0,wmin=3000,wmax=10000,adj_templ_res=None):
+    #adapted from https://github.com/BrownDwarf/gollum
+    path="~/libraries/raw/PHOENIX/"
+    base_path = os.path.expanduser(path)
+    assert os.path.exists(base_path), "Given path does not exist."
+
+    wl_file = f"{base_path}/WAVE_PHOENIX-ACES-AGSS-COND-2011.fits"
+    assert os.path.exists(wl_file), f"PHOENIX models must be in {base_path}"
+
+    Z_string = f"{Z:+0.1f}" if Z else "-0.0"
+    teff=round(teff,-2)
+
+    wl_orig = fits.open(wl_file)[0].data.astype(np.float64)
+    mask = (wl_orig >= wmin) & (wl_orig <= wmax)
+    wave = wl_orig[mask]
+
+    fn = f"{base_path}/Z{Z_string}/lte{teff:05d}-{logg:0.2f}{Z_string}.PHOENIX-ACES-AGSS-COND-2011-HiRes.fits"
+    flux_orig = fits.open(fn)[0].data.astype(np.float64)
+    flux = flux_orig[mask]
+
+    if adj_templ_res != None:
+        flux=pyasl.instrBroadGaussFast(wave,flux,resolution=adj_templ_res,edgeHandling='firstlast')
+        print('broadening template instrument resolution with effective res of R=',adj_templ_res)
+        
+    
+    return wave,flux
 
 
 def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid=False,start_date='1900',end_date='2100',w_range_auto=False):
@@ -597,7 +657,7 @@ def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid
         
         dates_df=pd.DataFrame(info_list,columns=info_columns).sort_values('mjd').reset_index(drop=True)
         
-    ordered_dates=dates_df[dates_df.utc.between(start_date,end_date)]
+    ordered_dates=dates_df#[dates_df.utc.between(start_date,end_date)] #not filtering in function call any more
     
     if qgrid==True or all_inst==True:
         data_dates_range=ordered_dates
@@ -623,7 +683,8 @@ def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid
       
     
     ''' instrument details, create standard wavelength list'''
-    w_step=0.01#step size of 0.01 allows line finder to get narrow lines    
+    w_step=0.01#step size of 0.01 allows line finder to get narrow lines  
+    #changing to use same w_step for all instruments and will apply broadening for comparing instruments seperately
     if instrument=='FEROS':
         w_min=data_dates_range.wmin.values[0]*10
         w_max=data_dates_range.wmax.values[0]*10
@@ -633,21 +694,21 @@ def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid
     elif instrument=='HARPS':
         w_min=data_dates_range.wmin.values[0]*10
         w_max=data_dates_range.wmax.values[0]*10
-        w_step=0.05
+        #w_step=0.05
         w0=np.arange(w_min,w_max,w_step) #set standard range of wavelength with set steps
         instr_mask=((w0 < 5303) | (w0 > 5338))            
         w0=w0[instr_mask]    
     elif instrument=='ESPRESSO':
         w_min=data_dates_range.wmin.values[0]*10
         w_max=data_dates_range.wmax.values[0]*10
-        w_step=0.01
+        #w_step=0.01
         w0=np.arange(w_min,w_max,w_step)    
     elif instrument=='ESPaDOnS':
         w_min=3700
         w_max=10450  
         w0=np.arange(w_min,w_max,w_step) #set standard range of wavelength with set steps
     elif instrument=='UVES':
-        w_step=0.01
+        #w_step=0.01
         if len(np.unique(round(data_dates_range.wmin))) >1:
             w_min_select = int(input('more than one spectral arm exisits.. select arm from wmin \n possible wmin values for UVES data: %s \n select wmin...:'%(np.unique(round(data_dates_range.wmin)))))
             data_dates_range=data_dates_range[np.isclose(data_dates_range.wmin.values, w_min_select, atol=5)]
@@ -658,7 +719,7 @@ def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid
             w_max=w_max / 10
         w0=np.arange(w_min,w_max,w_step) #set standard range of wavelength with set steps
     elif instrument == 'XSHOOTER':
-        w_step=0.1
+        #w_step=0.1
         if len(np.unique(round(data_dates_range.wmin/100))) >1:
             w_min_select = int(input('more than one spectral arm exisits.. select arm from wmin \n possible wmin values for %s data: %s \n select wmin...:'%(instrument,np.unique(round(data_dates_range.wmin)))))
             data_dates_range=data_dates_range[np.isclose(data_dates_range.wmin.values, w_min_select, atol=5)]
@@ -679,25 +740,27 @@ def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid
     elif instrument=='all': 
         #it works if you specify a common smaller wavelength range for all the instruments
         print('selecting >1 instrument only works for reduced range within all coverages')
-        print('ensure correct selection is made from qgrid using wmin and wmax sliders')
-        print('suggested wmin and wmax: %.0f , %.0f'%(max(data_dates_range.wmin)*10, min(data_dates_range.wmax)*10))       
-        w_step=0.01
+        print('suggested wmin and wmax: %.0f , %.0f (if nm, convert to AA)'%(max(data_dates_range.wmin), min(data_dates_range.wmax)))       
+        #w_step=0.01
         if w_range_auto==True:
             print('using suggested wmin and wmax values')
-            w_max=min(data_dates_range.wmax)*10
-            w_min=max(data_dates_range.wmin)*10
+            w_max=min(data_dates_range.wmax)
+            w_min=max(data_dates_range.wmin)
+            if w_min < 100:
+                w_min = w_min *10
+                w_max=w_max*10
         else:
             w_min, w_max = [float(x) for x in input('Enter min and max wavelength for all instruments in Angstroms e.g. 5000 5500 : \n').split()] 
         w0=np.arange(w_min,w_max,w_step)
     elif instrument=='ROTFIT':
         w_min=data_dates_range.wmin.values[0]*10
         w_max=data_dates_range.wmax.values[0]*10
-        w_step=0.01
+        #w_step=0.01
         w0=np.arange(w_min,w_max,w_step)        
     elif instrument=='XMM':
         w_min=data_dates_range.wmin.values[0]*10
         w_max=data_dates_range.wmax.values[0]*10
-        w_step=0.01
+        #w_step=0.01
         w0=np.arange(w_min,w_max,w_step) 
     elif instrument=='COS' or instrument=='STIS':
         if len(np.unique(round(data_dates_range.wmin))) >1:
@@ -706,20 +769,29 @@ def get_instrument_date_details(data_fits_files,instr='any',all_inst=False,qgrid
         
         w_min=data_dates_range.wmin.values[0]*10
         w_max=data_dates_range.wmax.values[0]*10
-        w_step=0.1
+        #w_step=0.1
         w0=np.arange(w_min,w_max,w_step)   
     elif 'CAFOS' in instrument:
         w_min=data_dates_range.wmin.values[0]*10
         w_max=data_dates_range.wmax.values[0]*10
-        w_step=0.1
+        #w_step=0.1
         w0=np.arange(w_min,w_max,w_step) 
     else:
         if instrument != 'any':
             print('WARNING: instrument ', instrument, 'not tested but read in by read in scripts')
-            w_min=data_dates_range.wmin.values[0]*10
-            w_max=data_dates_range.wmax.values[0]*10
-            w_step=0.1
+            if len(np.unique(round(data_dates_range.wmin))) >1:
+                w_min_select = int(input('more than one spectral arm exisits.. select arm from wmin \n possible wmin values for %s data: %s \n select wmin...:'%(instrument,np.unique(round(data_dates_range.wmin)))))
+                data_dates_range=data_dates_range[np.isclose(data_dates_range.wmin.values, w_min_select, atol=5)]
+
+            w_min=data_dates_range.wmin.values[0]
+            w_max=data_dates_range.wmax.values[0]
+            if w_min < 1000:
+                w_min=w_min*10
+                w_max=w_max*10
+            #w_step=0.1
             w0=np.arange(w_min,w_max,w_step)
+            if max(w0) > 20000:
+                w0=w0 / 10
         
     
     return data_dates_range,instrument,w0
@@ -762,6 +834,92 @@ def wl_excluder(w0,df_av,df_av_norm=[],w0_cut=[]):
         return w0,df_av
 
 
+def spt_coding(spt_in):
+	# give a number corresponding to the input SpT
+	# the scale is 0 at M0, -1 at K7, -8 at K0 (K8 is counted as M0),  -18 at G0
+	if np.size(spt_in) == 1:
+		if spt_in[0] == 'M':
+			spt_num = float(spt_in[1:])
+		elif spt_in[0] == 'K':
+			spt_num = float(spt_in[1:])-8.
+		elif spt_in[0] == 'G':
+			spt_num = float(spt_in[1:])-18.
+		elif spt_in[0] == 'F':
+			spt_num = float(spt_in[1:])-28.
+		elif spt_in[0] == 'A':
+			spt_num = float(spt_in[1:])-38.
+		elif spt_in[0] == 'B':
+			spt_num = float(spt_in[1:])-48.
+		elif spt_in[0] == 'L':
+			spt_num = float(spt_in[1:])+10.
+		elif spt_in[0] == '.':
+			spt_num = -99.
+		# else:
+		# 	sys.exit('what?')
+		return spt_num
+	else:
+		spt_num = np.empty(len(spt_in))
+		for i,s in enumerate(spt_in):
+			if s[0] == 'M':
+				spt_num[i] = float(s[1:])
+			elif s[0] == 'K':
+				spt_num[i] = float(s[1:])-8.
+			elif s[0] == 'G':
+				spt_num[i] = float(s[1:])-18.
+			elif s[0] == 'F':
+				spt_num[i] = float(s[1:])-28.
+			elif s[0] == 'A':
+				spt_num[i] = float(s[1:])-38.
+			elif s[0] == 'B':
+				spt_num[i] = float(s[1:])-48.
+			elif s[0] == 'L':
+				spt_num[i] = float(s[1:])+10.
+			elif s[0] == '.':
+				spt_num[i] = -99.
+			# else:
+			# 	sys.exit('what?')
+		return spt_num
 
+
+def convScodToSpTstring(scod):
+	if np.size(scod) == 1:
+		if scod<-18 or scod >10:
+			print('out of bound')
+			return None
+		elif scod>=0:
+			return 'M'+str(scod)
+		elif scod<0 and scod>=-8:
+			scodRet = 8+scod
+			return 'K'+str(scodRet)
+		elif scod<-8 and scod>-18:
+			scodRed = 18+scod
+			return 'G'+str(scodRed)
+		return None
+	else:
+		spt_out = np.empty(len(scod),dtype = 'U64')
+		for s,i in enumerate(scod):
+
+			if i<-18 or i >10:
+				print('out of bound')
+				spt_out[s] = 'NaN'
+				#return None
+			elif i>=0:
+				#return 'M'+str(i)
+				spt_out[s] = 'M'+"%.1f" % (i)
+			elif i<0 and i>=-8:
+				iRet = 8+i
+				spt_out[s] = 'K'+"%.1f" % (iRet)
+			elif i<-8 and i>-18:
+				iRed = 18+i
+				spt_out[s] = 'G'+"%.1f" % (iRed)
+			else: spt_out[s] ='NaN'
+		return spt_out
+
+"""
+# FOR PLOTTING
+ticks =  np.arange(-22,10,1)
+ticklabels = np.array(['','','F8','','G0','','','','','G5','','','','','K0','','','','','K5','','K7','','M1','','M3','','M5','','M7','','M9',''])
+pl.xticks(ticks,ticklabels)
+"""
 
 
