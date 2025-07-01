@@ -38,3 +38,4 @@ __all__ = [
 
 __bibtex__ = "BibTeX reference string or metadata"
 __version_info__ = (0, 9, 0)  # Version tuple for compatibility checks
+__warningregistry__ = {}
