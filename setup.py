@@ -23,6 +23,14 @@ setup(
         "numpy",
         "matplotlib",
         "pandas",
+        "scipy",
+        "astropy",
+        "qgrid",
+        "ipywidgets",
+        "ipython",
+        "PyAstronomy",
+        "astroquery",
+        "lmfit",
     ],
     include_package_data=True,  # Include non-code files specified in MANIFEST.in
     package_data={
