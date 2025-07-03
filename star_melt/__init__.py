@@ -5,7 +5,6 @@ import glob
 __version__ = "0.9.0"  # Ensure version information is defined
 __author__ = "Justyn Campbell-White"
 
-# Explicitly import required modules
 from .ESP_fits_get_spectra import read_ESP_fits_spec
 from .ESO_fits_get_spectra import read_ESO_fits_spec
 from .utils_saha_av import saha_av
@@ -14,7 +13,6 @@ from .utils_physics import *
 from .utils_spec import * 
 import star_melt.utils_shared_variables as USH            
 
-# Import shared variables
 from .utils_shared_variables import * #fig_size_s, fig_size_l, fig_size_n, inst_res, radvel, vsini, target, instrument, line_resources_dir, line_table_prev_obs
 
 # Add imported modules to globals and __all__
