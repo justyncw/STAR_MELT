@@ -1806,7 +1806,7 @@ def find_em_lines(df_av,f_flat,radvel,vsini,sigma=2.5,av='med',atol=0.5,wl_win=1
     #print(w0_matches)
 
     if output_norm == True:
-        figure(figsize=USH.fig_size_n)
+        figure(figsize=USH.fig_size_l)
         cla()
         #plot(w0,f0_data+1,'b',label='Input Spectra')
         plot(w0,f_flat,'r',label='Continuum Sub.')
@@ -1839,7 +1839,7 @@ def find_em_lines(df_av,f_flat,radvel,vsini,sigma=2.5,av='med',atol=0.5,wl_win=1
         
         #print(w0_em,f0_data_em)
     if output == True:
-        figure(figsize=USH.fig_size_n)
+        figure(figsize=USH.fig_size_l)
         cla()
         #plot(w0,f0_data+1,'b',label='Input Spectra')
         plot(w0,f0_data,'r',label='Input spectra')

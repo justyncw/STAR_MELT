@@ -27,7 +27,7 @@ clight=astropy.constants.c.to('km/s').to_value()
 
 #SIMBAD astroquery setup
 customSimbad = Simbad()
-customSimbad.add_votable_fields('sp','mk','velocity','rot','rv_value')
+customSimbad.add_votable_fields('sp','velocity')
 
 
 def listdir_fullpath(d):
@@ -167,7 +167,7 @@ def get_fits_files_simbad(target,standards_dir,simbad_out=False,prompt=True):
     '''
     try:
         simbad_table=customSimbad.query_object(target)
-        mk=simbad_table['SP_TYPE'][0].decode("utf-8")
+        mk=simbad_table['sp_type'][0]
         print('spectral type of ',target,' is:', mk)
     except:
         try:
@@ -176,7 +176,7 @@ def get_fits_files_simbad(target,standards_dir,simbad_out=False,prompt=True):
             print('spectral type of ',target,' is:', mk)
         except:
             if prompt==True:
-                print('simbad query failed')
+                print('simbad query failed obtaining spectral type of %s'%(target))
                 mk=input('enter spectral type of %s: \n'%(target))
             else:
                 mk='m1'
@@ -206,16 +206,36 @@ def get_fits_files_simbad(target,standards_dir,simbad_out=False,prompt=True):
     
     '''find radial velocity of template star'''
     standard_star=os.path.basename(os.path.dirname(standard_fits_files[0]))
+    print('standard star is:', standard_star)
     try:
         simbad_table2=customSimbad.query_object(standard_star)
         simbad_table2.colnames
-        st_rv=simbad_table2['RVZ_RADVEL'][0]
-        st_vsini=simbad_table2['ROT_Vsini'][0]
+        st_rv=simbad_table2['rvz_radvel'][0]
+        #st_vsini=simbad_table2['ROT_Vsini'][0]
         print('radial velocity of template star is:', st_rv)
-        print('vsini of template star is:', st_vsini)
+        #print('vsini of template star is:', st_vsini)
     except:
-        print('!! simbad query failed !!')
-        st_rv=input('>< >< enter RV of template star: \n')
+        try:
+            st_rv=simbad_table2['RVZ_RADVEL'][0]
+            #st_vsini=simbad_table2['ROT_Vsini'][0]
+            print('radial velocity of template star is:', st_rv)
+            #print('vsini of template star is:', st_vsini)
+        except:
+            try:
+                st_rv=simbad_table2['RVZ_RADVEL'][0].decode("utf-8")
+                #st_vsini=simbad_table2['ROT_Vsini'][0]
+                print('radial velocity of template star is:', st_rv)
+                #print('vsini of template star is:', st_vsini)
+            except:
+                try:
+                    if prompt==True:
+                        print('simbad query failed')
+                        st_rv=input('enter RV of template star: \n')
+                    else:
+                        st_rv='0.0'
+                except:
+                    print('!! simbad query failed !!')
+                    st_rv=input('>< >< enter RV of template star: \n')
         
     if simbad_out==False:
         return standard_fits_files,mk,stype,st_rv

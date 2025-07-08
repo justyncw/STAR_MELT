@@ -31,6 +31,8 @@ setup(
         "PyAstronomy",
         "astroquery",
         "lmfit",
+        "qgridnext",
+        "ipympl"
     ],
     include_package_data=True,  # Include non-code files specified in MANIFEST.in
     package_data={
