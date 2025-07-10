@@ -1242,6 +1242,10 @@ def subtract_templ(df_line_target,obs_target,target_inst,df_line_templ,obs_templ
     #f0_target=NormalizeDataMedian(df_line_target[obs_target]).values
     #f0_target=NormalizeData(df_line_target[obs_target]).values
     f0_target=subtract_cont(df_line_target,av=obs_target,sigma_low=1.5,return_norm=True)                 
+    #note to return normalisation constant and save in FITS header for reference
+
+    
+    
     median_w0 = np.median(w0_target_o)  #take median w0 before rv shifting
 
     if rv_templ != None:

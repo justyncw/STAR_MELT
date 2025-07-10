@@ -26,7 +26,7 @@ from scipy.signal import find_peaks_cwt
 from scipy.signal import argrelextrema
 # from star_melt.ESO_fits_get_spectra import *
 # from star_melt.ESP_fits_get_spectra import *
-# from star_melt.utils_data import *
+from star_melt.utils_data import *
 # from star_melt.utils_spec import *
 
 # Shared variables and constants
@@ -131,9 +131,9 @@ def load_phot_templates(template_dir):
             target='HIP116384'
         try:
             simbad=customSimbad.query_object(target)
-            radvel_templ=simbad['RVZ_RADVEL'][0]
-            radvel_templ_err=simbad['RVZ_ERROR'][0]
-            mk_templ=simbad['SP_TYPE'][0]
+            radvel_templ=simbad['rvz_radvel'][0]
+            radvel_templ_err=simbad['rvz_err'][0]
+            mk_templ=simbad['sp_type'][0]
             if mk_templ.startswith('d'):
                 mk_templ = mk_templ[1:]#remove 'd' from start of sp_t
             if len(mk_templ) >= 3 and mk_templ[2] == '.':
