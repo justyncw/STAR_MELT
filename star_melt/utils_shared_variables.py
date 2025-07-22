@@ -110,13 +110,13 @@ line_table_prev_obs = line_table_prev_obs[ [ col for col in line_table_prev_obs.
 
 #photosphere removal data...
 def load_phot_templates(template_dir):
-    print('reading STAR-MELT photpsheric template stars...')
-    data_dir_cl3=os.path.join(template_dir,'PEN_ESP_ClassIII')
+    print('reading STAR-MELT photpsheric template stars from: ', template_dir)
+    data_dir_cl3=os.path.join(template_dir,'class_III')
     data_fits_files_cl3=get_files(data_dir_cl3,'.fits','.FTZ')
     cl3_rvs=pd.read_csv(os.path.join(data_dir_cl3,'ESP_Cl3_RVs_240509.csv'))
     data_dates_range_cl3,instrument,w0_cl3=get_instrument_date_details(data_fits_files_cl3,qgrid=True)
     data_dates_range_cl3['templ']='Cl3'
-    data_dir_ms=os.path.join(template_dir,'templates_HARPS_230629')
+    data_dir_ms=os.path.join(template_dir,'main_sequence')
     data_fits_files_ms=get_files(data_dir_ms,'.fits','.FTZ')
     data_dates_range_ms,instrument,w0_ms=get_instrument_date_details(data_fits_files_ms,qgrid=True)
     data_dates_range_ms['templ']='MS'
