@@ -2049,7 +2049,7 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
                 gof_min=0.2,printout=False,output=False,savefig=False,subplot=False,plot_comps=True,legend=True,
                 reject_low_gof=False,reject_line_close=True,g1_cen=None,g2_cen=None,g3_cen=None,
                 vred=False,neg_cen=None,title='full',g1_sig=None,g2_sig=None,g3_sig=None,neg_sig=None,
-               sub_cont_fit=False):
+               sub_cont_fit=False,int_flux_model=False):
     '''
     
 
@@ -2165,7 +2165,9 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
     #calculate intergrated flux just from flux above continuum, i.e. subtract line compnent before integrating
     #int_flux=np.round(np.trapz(y_sub_line,x),4)
     int_flux=np.trapz(y_sub_line,x) # for data
-    int_flux=np.trapz(g_fit_ori - line_values,x) # for fit
+    if int_flux_model:
+        #if the integrated flux is to be calculated from the model fit
+        int_flux=np.trapz(g_fit_ori - line_values,x) # for fit
     
     EW= -1 *line * (int_flux/median(line_values))/(clight) #in angstroms
 
@@ -2347,10 +2349,10 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
                 ax[1].plot(x, comps['line_'], 'k--', label='Cont.')
                 ax[1].axvline(x=centre_x,color='k',linewidth=0.5,linestyle='--')
                 if ngauss==1:
-                    ax[1].set_title('Line: %s%s %s-%s, g1_cen= %.1f \n SNR: %.2f, line slope: %.2f ' %(
+                    ax[1].set_title('Line: %s%s %s-%s, g1_cen= %.1f \n SNR: %.2e, line slope: %.2f ' %(
                     ele,sp_num,J_i,J_k,g_fit.best_values['g1_center'],SNR,abs(g_fit.best_values['line_slope']/peak_y)),fontsize=6)
                 if ngauss==2:
-                    ax[1].set_title('Line: %s%s %s-%s, g1_cen= %.1f g2_cen=%.1f \n SNR: %.2f, line slope: %.2f ' %(
+                    ax[1].set_title('Line: %s%s %s-%s, g1_cen= %.1f g2_cen=%.1f \n SNR: %.2e, line slope: %.2f ' %(
                     ele,J_i,J_k,g_fit.best_values['g1_center'],g_fit.best_values['g2_center'],SNR,abs(g_fit.best_values['line_slope']/peak_y)),fontsize=6)
                     ax[1].plot(x, comps['g2_'], 'm--', label='Gauss comp. 2')
                     ax[1].axvline(x=centre_x2,color='k',linewidth=0.5,linestyle='--')
@@ -2461,7 +2463,7 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
 def get_line_results(em_matches,df_av_norm,line_date_list,target,w_range=0.6,title='full',radvel=USH.radvel,
                      ngauss=1,neg=False,vred=False,gof_min=0.2,reject_low_gof=True,reject_line_close=True,
                      g1_cen=None,g2_cen=None,g3_cen=None,neg_cen=None,g1_sig=None,g2_sig=None,g3_sig=None,neg_sig=None,
-                     printout=False,output=False,savefig=False,plot_comps=True,sub_cont_fit=False):
+                     printout=False,output=False,savefig=False,plot_comps=True,sub_cont_fit=False,int_flux_model=False):
     '''
     
 
@@ -2522,7 +2524,7 @@ def get_line_results(em_matches,df_av_norm,line_date_list,target,w_range=0.6,tit
                                       gof_min=gof_min,printout=printout,output=output,savefig=savefig,title=title,
                                       reject_low_gof=reject_low_gof,reject_line_close=reject_line_close,plot_comps=plot_comps,
                                           g1_cen=g1_cen,g2_cen=g2_cen,g3_cen=g3_cen,neg_cen=neg_cen,
-                                         g1_sig=g1_sig,g2_sig=g2_sig,g3_sig=g3_sig,neg_sig=neg_sig,sub_cont_fit=sub_cont_fit)
+                                         g1_sig=g1_sig,g2_sig=g2_sig,g3_sig=g3_sig,neg_sig=neg_sig,sub_cont_fit=sub_cont_fit,int_flux_model=int_flux_model)
             line_results=pd.concat([line_results,line_info],axis=1,ignore_index=True)
             #line_results=line_results.append(line_info,ignore_index=True)
     line_results=line_results.T
