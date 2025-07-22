@@ -38,6 +38,7 @@ inst_res = {
     "FEROS": 48000,
     "UVES": 110000,
     "HARPS": 115000,
+    "ESPRESSO": 140000,
     "XSHOOTER": 10000,
     "SHOOT": 10000,
     "HRS": 65000,

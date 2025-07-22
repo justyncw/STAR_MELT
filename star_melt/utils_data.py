@@ -606,6 +606,7 @@ def organise_fits_files(dir_of_files,output_dir):
 def read_PHOENIX_files(teff=4000,logg=4.5,Z=0.0,wmin=3000,wmax=10000,adj_templ_res=None):
     #adapted from https://github.com/BrownDwarf/gollum
     path="~/libraries/raw/PHOENIX/"
+    print('reading PHOENIX files from %s'%(path))
     base_path = os.path.expanduser(path)
     assert os.path.exists(base_path), "Given path does not exist."
 

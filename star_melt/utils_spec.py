@@ -351,14 +351,27 @@ def offset_wl_plot(df,fs=USH.fig_size_l,output=True,
     fig=figure(figsize=fs)
     # Iterate through the remaining columns (y-axis data) with a +1 offset
     for i, column in enumerate(df.columns[1:-3], start=1):
-        y = df.iloc[:, i] - i +10 # Apply the +1 offset to y
+        y = df.iloc[:, i] + i  # Apply the +1 offset to y
         plot(x, y, label=column)
 
     xlabel('Wavelength [$\AA$]')  # Use the first column name as the x-axis label
     ylabel("Flux")
     if legend==True:
-        fig.legend(fontsize=10)
-    tight_layout()
+        # Annotate each spectrum with its label above the median flux value on the right
+        for i, column in enumerate(df.columns[1:-3], start=1):
+            y = df.iloc[:, i] + i
+            x = df.iloc[:, 0]
+            label = str(column)
+            # Find the rightmost x value
+            x_right = x.iloc[-1]
+            # Find the median y value for this spectrum
+            y_median = np.median(y)
+            # Annotate slightly above the median at the rightmost x
+            annotate(label, xy=(x_right, y_median + 0.05 * (max(y) - min(y))), 
+                     xytext=(5, 0), textcoords='offset points',
+                     ha='left', va='bottom', fontsize=10, color='black', rotation=0)
+        fig.legend(fontsize=10, loc='center left', bbox_to_anchor=(1, 0.5))
+    #tight_layout()
     show()
 
 
@@ -1234,7 +1247,7 @@ def subtract_templ(df_line_target,obs_target,target_inst,df_line_templ,obs_templ
                    rv_shift=0,rv_templ=None,vsini=0,r=0,shift=0,mask_pm=[None,2],
                    fs=USH.fig_size_l,plot_x=[],plot_subtracted=True,plot_divided=False,
                    return_params=False,auto_r=False,auto_vsini=False,chi_output=False,
-                  output=False, savefig=False,savefits=False,localdirsave=True):
+                  output=False, legend_plot=True, savefig=False,savefits=False,localdirsave=True):
 
                        
     #target spectrum normalised to 0 continuum
@@ -1487,11 +1500,13 @@ def subtract_templ(df_line_target,obs_target,target_inst,df_line_templ,obs_templ
         if plot_subtracted==True:
             plot(w0_target,f0_subtracted+1, 'b',lw=2,label='Residual +1')
         if plot_divided==True:
-            plot(w0_target,f0_divided,label='divided',linewidth=3)    
-        suptitle(f'chi sq ={np.round(chisq,3)},std ={np.round(std,3)},euc.d.={np.round(euc_dist,3)}',fontsize=10)
+            plot(w0_target,f0_divided,label='divided',linewidth=3) 
+        if legend_plot:   
+            suptitle(f'chi sq ={np.round(chisq,3)},std ={np.round(std,3)},euc.d.={np.round(euc_dist,3)}',fontsize=10)
         ylabel('Flux')
         xlabel('Wavelength [$\AA$]')
-        legend(ncol=2)#,loc='upper center')
+        if legend_plot:
+            legend(ncol=2)#,loc='upper center')
         tight_layout()
         #xlim(mean(w0_target)-5,mean(w0_target)+5)
         xlim(plot_x)
@@ -2025,7 +2040,7 @@ def fit_gauss(x,y,ngauss=1,neg=False,g1_cen=None,g2_cen=None,g3_cen=None,neg_cen
     if neg_sig != None and neg==True:
         pars['g4_sigma'].set(value=(neg_sig[0]+neg_sig[1])/2, min=neg_sig[0], max=neg_sig[1])
     
-    out = mod.fit(y, pars, x=x, weights = 1/np.std(y),nan_policy='propagate')    #use weights to obtain red. chi sq
+    out = mod.fit(y, pars, x=x, weights = 1/np.nanstd(y),nan_policy='propagate')    #use weights to obtain red. chi sq
 
         
     return out
@@ -2784,7 +2799,7 @@ def phase_period(em_line_date_results,linewav,mjd0,period=17,gofmin=0.2,filmin=-
 
 def bary_corr(mjd_insts,simbad_table,observatory='lasilla'):
     
-    coords=SkyCoord(simbad_table['RA'][0] +' '+ simbad_table['DEC'][0],unit=(u.hourangle, u.deg))
+    coords=SkyCoord(simbad_table['ra'][0] +' '+ simbad_table['dec'][0],unit=(u.hourangle, u.deg))
     location=EarthLocation.of_site(observatory)
     
     mjd_table=mjd_insts#[mjd_insts.inst=='FEROS']
