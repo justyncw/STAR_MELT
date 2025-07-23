@@ -80,6 +80,17 @@ def get_files(d,*args):
     return matches
 
 def ensure_dir(directory):
+    """
+    Function to ensure that a directory exists, if not create it.
+    Parameters  
+    ----------
+    directory : str
+        path to directory to check and create if not exists.
+
+    Returns
+    -------
+        None
+    """
     if not os.path.isdir(directory):
         os.makedirs(directory)
         print('creating directory %s'%(directory))
@@ -105,13 +116,28 @@ def closest(lst, K):
     return lst[builtins.min(range(len(lst)), key = lambda i: abs(lst[i]-K))] 
 
 def ecdf(x):
+    """
+    Compute the empirical cumulative distribution function (ECDF) of a dataset.
+    Parameters
+    ----------
+    x : array-like
+        Input data for which to compute the ECDF.   
+    Returns
+    -------
+    xs : array
+        Sorted values of the input data.
+    ys : array
+        Corresponding ECDF values, where ys[i] is the proportion of data points less than or equal to xs[i].
+        
+    """
+
     figure()
     ylabel('Fraction of data')
     for data in x:
         xs = np.sort(data)
         ys = np.arange(1, len(xs)+1)/float(len(xs))
         plot(xs,ys)
-    #return xs, ys
+    return xs, ys
 #xs,ys=ecdf(f_flat)
 
     
@@ -542,6 +568,24 @@ def spec_simple_fits(flux_filename):
 
 
 def read_fits_files(filename,verbose=False):
+    """ Read a FITS file and extract relevant information.
+    Parameters  
+    ----------
+    filename : str
+        Path to the FITS file to be read.
+    verbose : bool, optional
+        If True, print additional information about the reading process. Default is False.      
+    Returns
+    -------
+    info : list
+        List containing metadata about the FITS file, including target name, observation date, MJD, instrument, wavelength range, barycentric correction, and SNR.
+    wave : numpy.ndarray
+        1D array of wavelength values extracted from the FITS file.
+    flux : numpy.ndarray
+        1D array of flux values extracted from the FITS file.
+    err : numpy.ndarray
+        1D array of error values associated with the flux, if available; otherwise, None.
+    """ 
     try:
         info,wave,flux,err=read_ESO_fits_spec(filename)
         if verbose==True:
@@ -589,6 +633,18 @@ def read_fits_files(filename,verbose=False):
     return info,wave,flux,err
 
 def organise_fits_files(dir_of_files,output_dir):
+    """ Organize FITS files from a specified directory into subdirectories based on their metadata.
+    Parameters
+    ----------
+    dir_of_files : str
+        Path to the directory containing FITS files to be organized.
+    output_dir : str
+        Path to the output directory where organized files will be saved.
+    Returns
+    -------
+    None
+        The function does not return any value, but it creates subdirectories and copies FITS files into them based on their metadata.
+    """
     files=get_files(dir_of_files,'.fits')
     for f in files:
         try:

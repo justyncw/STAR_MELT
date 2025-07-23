@@ -49,6 +49,19 @@ class renamer():
             return "%s_%d" % (x, self.d[x])
 
 def effective_res(R_h,R_l): 
+    '''
+    Calculate the effective resolution difference between spectrographs given the high and low resolution values.
+    Parameters
+    ----------
+    R_h : float
+        High resolution value.
+    R_l : float
+        Low resolution value.
+    Returns
+    -------
+    float
+        Effective resolution.
+    '''
     return (R_h * R_l) / np.sqrt( R_h**2 - R_l**2)
 
 def NormalizeData(data):
@@ -367,11 +380,22 @@ def offset_wl_plot(df,fs=USH.fig_size_l,output=True,
             # Find the median y value for this spectrum
             y_median = np.median(y)
             # Annotate slightly above the median at the rightmost x
-            annotate(label, xy=(x_right, y_median + 0.05 * (max(y) - min(y))), 
-                     xytext=(5, 0), textcoords='offset points',
-                     ha='left', va='bottom', fontsize=10, color='black', rotation=0)
+            # Shift label to the left and up a bit
+            # Place the label at the middle of the x-axis, slightly above the median y value
+            x_middle = (x.iloc[0] + x.iloc[-1]) / 2
+            annotate(
+                label,
+                xy=(x_middle, y_median),
+                xytext=(0, 10),  # up (+10 px)
+                textcoords='offset points',
+                ha='center',
+                va='bottom',
+                fontsize=10,
+                color='black',
+                rotation=0
+            )
         fig.legend(fontsize=10, loc='center left', bbox_to_anchor=(1, 0.5))
-    #tight_layout()
+    tight_layout()
     show()
 
 
@@ -1258,7 +1282,77 @@ def subtract_templ(df_line_target,obs_target,target_inst,df_line_templ,obs_templ
                    fs=USH.fig_size_l,plot_x=[],plot_subtracted=True,plot_divided=False,
                    return_params=False,auto_r=False,auto_vsini=False,chi_output=False,
                   output=False, legend_plot=True, savefig=False,savefits=False,localdirsave=True):
+    '''
+    subtract template spectrum from target spectrum, normalise to 0 continuum
+    and apply instrument broadening, vsini broadening and radial velocity shift.
+    Parameters
+    ----------
+    df_line_target : dataframe
+        target star line data frame.
+    obs_target : str
+        observation column name in df_line_target to use.
+    target_inst : str
+        instrument name of target star. 
+    df_line_templ : dataframe
+        template star line data frame.
+    obs_templ : str
+        observation column name in df_line_templ to use.    
+    templ_inst : str
+        instrument name of template star.
+    rv_shift : float, optional
+        radial velocity shift to apply to target star. The default is 0.
+    rv_templ : float, optional
+        radial velocity of template star. The default is None.
+    vsini : float, optional
+        vsini of target star. The default is 0.
+    r : float, optional
+        ratio of template to target star flux. The default is 0.
+    shift : float, optional
+        shift to apply to template star flux. The default is 0.
+    mask_pm : list, optional
+        mask parameters for line masking. The default is [None,2].  
+    fs : tuple, optional
+        figure size for plotting. The default is USH.fig_size_l.    
+    plot_x : list, optional
+        x-axis limits for plotting. The default is [].
+    plot_subtracted : bool, optional
+        option to plot the subtracted spectra. The default is True.     
+    plot_divided : bool, optional
+        option to plot the divided spectra. The default is False.
+    return_params : bool, optional
+        option to return the parameters used in the subtraction. The default is False.
+    auto_r : bool, optional
+        option to automatically calculate the ratio of template to target star flux. The default is False.
+    auto_vsini : bool, optional
+        option to automatically calculate the vsini of the target star. The default is False.
+    chi_output : bool, optional
+        option to output the chi-squared values of the fit. The default is False.
+    output : bool, optional
+        option to plot the results. The default is False.   
+    legend_plot : bool, optional
+        option to plot the legend. The default is True.
+    savefig : bool, optional
+        option to save the figure. The default is False.    
+    savefits : bool, optional
+        option to save the FITS file. The default is False. 
+    localdirsave : bool, optional
+        option to save the FITS file in the local directory. The default is True.
 
+    Returns
+    -------
+    f0_target : array
+        target star flux after subtraction and normalisation.
+    f0_templ : array
+        template star flux after subtraction and normalisation.
+    w0_target : array
+        target star wavelength array.   
+    w0_templ : array
+        template star wavelength array.
+    radvel_diff : float
+        radial velocity difference between target and template star.
+    median_w0 : float
+        median wavelength of the target star before radial velocity shifting.
+    '''
                        
     #target spectrum normalised to 0 continuum
     w0_target_o=df_line_target.wave.values
