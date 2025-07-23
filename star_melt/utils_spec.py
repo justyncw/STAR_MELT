@@ -236,7 +236,7 @@ def get_av_spec(data_dates_range,w0,label='mjd',norm=False,output=False,plot_av=
         #legend(bbox_to_anchor=(1.04,0.5), loc="center left", borderaxespad=0)
         legend(loc='upper right',fontsize=8)
         if norm==True:
-            ylabel('Noramlised Flux')
+            ylabel('Norm. Flux')
         else:
             ylabel('Flux')
         xlabel('Wavelength [Angstroms]')
@@ -388,9 +388,19 @@ def get_line_spec(df_av, line, w_range=0.6, vel_offset=0, vel=False, norm=False,
     line : float
         Wavelength position of emission line to consider.
     w_range : float, optional
-        Wavelength range +/- around line to include. The default is 0.6.
+        Wavelength or velocity range +/- around line to include. The default is 0.6.
+    vel_offset : float, optional
+        Radial velocity offset to apply (in km/s). The default is 0.
     vel : bool, optional
         Option to return velocity values in km/s around line. The default is False.
+    norm : bool, optional
+        If True, normalize each spectrum by its median. Default is False.
+    cont_sub : bool, optional
+        If True, subtract the median from each spectrum. Default is False.
+    full_norm : bool, optional
+        If True, normalize each spectrum by (x - median) / (max - min). Default is False.
+    std_shift : float, optional
+        Value to add to the std_flux column. Default is None.
     save_text : bool, optional
         Option to save the output as a text file. The default is False.
 
