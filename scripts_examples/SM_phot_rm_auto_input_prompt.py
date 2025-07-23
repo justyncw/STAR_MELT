@@ -86,7 +86,7 @@ for target in data_dates_range2.target:
         target=target.replace('SO','HHM2007 ')
     try:
         simbad=customSimbad.query_object(target)
-        mk_tar=simbad['SP_TYPE'][0]
+        mk_tar=simbad['sp_type'][0]
         if mk_tar.startswith('d'):
             mk_tar = mk_tar[1:]#remove 'd' from start of sp_t
         if len(mk_tar) >= 3 and mk_tar[2] == '.':
