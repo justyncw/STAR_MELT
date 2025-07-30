@@ -2449,7 +2449,7 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
                 #figure(6,figsize=(5,5))
                 comps = g_fit.eval_components(x=x)
                 ax[1].plot(x, y, 'b')
-                ax[1].plot(x, comps['g1_'], 'g--', label='Gauss 1')
+                ax[1].plot(x, comps['g1_'], 'g--', label='Gauss. 1')
                 ax[1].plot(x, comps['line_'], 'k--', label='Cont.')
                 ax[1].axvline(x=centre_x,color='k',linewidth=0.5,linestyle='--')
                 if ngauss==1:
@@ -2458,10 +2458,10 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
                 if ngauss==2:
                     ax[1].set_title('Line: %s%s %s-%s, g1_cen= %.1f g2_cen=%.1f \n SNR: %.2e, line slope: %.2f ' %(
                     ele,J_i,J_k,g_fit.best_values['g1_center'],g_fit.best_values['g2_center'],SNR,abs(g_fit.best_values['line_slope']/peak_y)),fontsize=6)
-                    ax[1].plot(x, comps['g2_'], 'm--', label='Gauss comp. 2')
+                    ax[1].plot(x, comps['g2_'], 'm--', label='Gauss. 2')
                     ax[1].axvline(x=centre_x2,color='k',linewidth=0.5,linestyle='--')
                 if neg==True:
-                    ax[1].plot(x, comps['g4_'], 'c--', label='Neg Gauss comp')
+                    ax[1].plot(x, comps['g4_'], 'c--', label='Neg. Gauss.')
                 ax[1].legend(loc='upper right')
             
             elif subplot==False:
@@ -2506,7 +2506,7 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
                     elif title=='simple':
                         ax.set_title('%s %s %.2f' %(obs,ele,line),fontsize=12) 
                     if plot_comps==True:
-                        ax.plot(x, comps['g2_'], 'm--', label='Gauss comp. 2')
+                        ax.plot(x, comps['g2_'], 'm--', label='Gauss. 2')
                         ax.axvline(x=centre_x2,color='k',linewidth=0.5,linestyle='--')
                         #ax.axvline(x=centre_fit,color='r',linewidth=0.5,linestyle='--')  
                 if ngauss==3:
@@ -2516,13 +2516,13 @@ def gauss_stats(df_av_line,obs,ngauss=1,neg=False,em_row=999,target='temp',
                     elif title=='simple':
                         ax.set_title('%s %s %.2f' %(obs,ele,line),fontsize=12) 
                     if plot_comps==True:    
-                        ax.plot(x, comps['g2_'], 'm--', label='Gauss comp. 2')
+                        ax.plot(x, comps['g2_'], 'm--', label='Gauss. 2')
                         ax.axvline(x=centre_x2,color='k',linewidth=0.5,linestyle='--')
-                        ax.plot(x, comps['g3_'], 'y--', label='Gauss comp. 3')
+                        ax.plot(x, comps['g3_'], 'y--', label='Gauss. 3')
                         ax.axvline(x=centre_x3,color='k',linewidth=0.5,linestyle='--')
                 if neg==True:
                     if plot_comps==True:
-                        ax.plot(x, comps['g4_'], 'c--', label='Gauss abs.')
+                        ax.plot(x, comps['g4_'], 'c--', label='Gauss. abs.')
                         ax.axvline(x=centre_x4,color='k',linewidth=0.5,linestyle='--')
                     if vred==True:
                         ax.plot(x_min,y_min,'yo',markersize=12)
